@@ -1,0 +1,20 @@
+# General
+.DS_Store
+node_modules/
+dist/
+build/
+coverage/
+logs/
+*.log
+
+# Env & secrets (never commit real secrets)
+.env
+*.env
+server/.env
+*.pem
+*.key
+*.crt
+
+# Editor
+.vscode/
+.idea/

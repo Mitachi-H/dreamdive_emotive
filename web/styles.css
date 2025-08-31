@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light dark;
+  --fg: #222;
+  --bg: #fff;
+  --muted: #666;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #f3f3f3;
+    --bg: #111;
+    --muted: #999;
+  }
+}
+
+html, body { margin: 0; padding: 0; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, Arial, sans-serif; color: var(--fg); background: var(--bg); }
+header { padding: 16px; border-bottom: 1px solid #ccc3; }
+main { padding: 16px; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.log { height: 50vh; overflow: auto; background: #0008; color: #0f0; padding: 12px; border-radius: 6px; }
