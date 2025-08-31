@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -13,35 +13,84 @@
     </header>
     <main>
       <section>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width:280px" />
+        <div
+          style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"
+        >
+          <input
+            id="headsetId"
+            placeholder="Headset ID (optional)"
+            style="min-width: 280px"
+          />
           <button id="saveHeadset">Save ID</button>
           <button id="start">Start pow</button>
           <button id="stop">Stop pow</button>
-          <label class="small" style="margin-left:8px;">
-            <input type="checkbox" id="toggleRaw" /> RAW 表示
-          </label>
         </div>
         <div class="row small">
           <div>最新時刻: <span id="powTime">-</span></div>
           <div>要素数: <span id="powLen">-</span></div>
           <div>sid: <span id="powSid">-</span></div>
         </div>
-
+        <div class="muted small" style="margin-top: 12px">
+          <ol>
+            <li>
+              The values are absolute, the unit is uV^2 / Hz. Each sample is
+              calculated based on the last 2 seconds of EEG data.
+            </li>
+            <li>
+              Each sample is calculated based on the last 2 seconds of EEG data.
+            </li>
+            <li>
+              theta (4-8Hz)<br />
+              alpha (8-12Hz)<br />
+              betaL (low beta, 12-16Hz)<br />
+              betaH (high beta, 16-25Hz)<br />
+              gamma (25-45Hz)
+            </li>
+          </ol>
+        </div>
         <div class="pow-wrap">
           <div class="legend">
             <span>強度</span>
             <div class="legend-bar"></div>
             <span>低 → 高</span>
           </div>
-          <div id="grid" class="pow-grid" style="--band-count:5"></div>
+          <div id="grid" class="pow-grid" style="--band-count: 5"></div>
         </div>
 
-        <p class="muted small">配列の順序はヘッドセットのチャンネル構成に依存します。Insight の一例: ['AF3/theta','AF3/alpha','AF3/betaL','AF3/betaH','AF3/gamma', 'T7/theta', ... , 'AF4/gamma']</p>
-
         <pre id="pow" class="log hidden"></pre>
+
+        <div class="topo-section">
+          <div class="row small" style="margin-bottom: 6px">
+            Topomap (14ch 10-20 System)
+          </div>
+          <label class="small">
+            <input type="checkbox" id="toggleLabels" checked /> ラベル表示
+          </label>
+          <div class="topo-grid">
+            <div class="topo-item">
+              <canvas id="topo-theta" width="160" height="160"></canvas>
+              <div class="topo-caption">theta</div>
+            </div>
+            <div class="topo-item">
+              <canvas id="topo-alpha" width="160" height="160"></canvas>
+              <div class="topo-caption">alpha</div>
+            </div>
+            <div class="topo-item">
+              <canvas id="topo-betaL" width="160" height="160"></canvas>
+              <div class="topo-caption">betaL</div>
+            </div>
+            <div class="topo-item">
+              <canvas id="topo-betaH" width="160" height="160"></canvas>
+              <div class="topo-caption">betaH</div>
+            </div>
+            <div class="topo-item">
+              <canvas id="topo-gamma" width="160" height="160"></canvas>
+              <div class="topo-caption">gamma</div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
-    <script src="/pow.js"></script>
+    <script type="module" src="/pow.js"></script>
   </body>
   </html>

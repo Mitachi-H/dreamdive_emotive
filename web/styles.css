@@ -34,3 +34,10 @@ main { padding: 16px; }
 .small { font-size: 12px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hidden { display: none !important; }
+
+/* topomap */
+.topo-section { margin-top: 16px; }
+.topo-grid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.topo-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.topo-item canvas { width: 220px; height: 220px; background: #fff; border-radius: 50%; box-shadow: 0 0 0 1px #ccc3 inset; }
+.topo-caption { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }

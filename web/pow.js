@@ -1,4 +1,8 @@
-(() => {
+import { state, deriveFromLabels } from './pow/state.js';
+import { buildGrid, updateGrid } from './pow/grid.js';
+import { TOPO_SENSORS, drawHeadOverlay, updateTopomapsFromPowArray } from './pow/topomap.js';
+
+(function main() {
   const powEl = document.getElementById('pow');
   const powLenEl = document.getElementById('powLen');
   const powTimeEl = document.getElementById('powTime');
@@ -9,6 +13,14 @@
   const saveHeadsetBtn = document.getElementById('saveHeadset');
   const gridEl = document.getElementById('grid');
   const toggleRaw = document.getElementById('toggleRaw');
+  const toggleLabels = document.getElementById('toggleLabels');
+  const topoCanvases = {
+    theta: document.getElementById('topo-theta'),
+    alpha: document.getElementById('topo-alpha'),
+    betaL: document.getElementById('topo-betaL'),
+    betaH: document.getElementById('topo-betaH'),
+    gamma: document.getElementById('topo-gamma'),
+  };
 
   const getHeaders = () => {
     const h = {};
@@ -16,105 +28,6 @@
     if (t) h['Authorization'] = `Bearer ${t}`;
     return h;
   };
-
-  const state = {
-    labels: [],        // e.g., ["AF3/theta", ...]
-    sensors: [],       // e.g., ["AF3","F7",...]
-    bands: [],         // e.g., ["theta","alpha","betaL","betaH","gamma"]
-    indexByLabel: {},  // { "AF3/theta": 0, ... }
-    rollingMax: [],    // per-label rolling max for color scaling
-  };
-
-  function deriveFromLabels(labels) {
-    const idx = {};
-    labels.forEach((l, i) => { idx[l] = i; });
-    const seenSensors = new Set();
-    const sensors = [];
-    let firstSensor = null;
-    let bands = [];
-    for (const lab of labels) {
-      const [sensor, band] = String(lab).split('/');
-      if (!sensor || !band) continue;
-      if (!firstSensor) firstSensor = sensor;
-      if (!seenSensors.has(sensor)) {
-        seenSensors.add(sensor);
-        sensors.push(sensor);
-      }
-      if (sensor === firstSensor && !bands.includes(band)) bands.push(band);
-    }
-    if (bands.length === 0) bands = ['theta','alpha','betaL','betaH','gamma'];
-    return { sensors, bands, indexByLabel: idx };
-  }
-
-  function buildGrid() {
-    if (!gridEl) return;
-    gridEl.innerHTML = '';
-    gridEl.style.setProperty('--band-count', String(state.bands.length || 5));
-    // Header row
-    const headBlank = document.createElement('div');
-    headBlank.className = 'pow-head';
-    headBlank.textContent = '';
-    gridEl.appendChild(headBlank);
-    for (const band of state.bands) {
-      const d = document.createElement('div');
-      d.className = 'pow-head';
-      d.textContent = band;
-      gridEl.appendChild(d);
-    }
-    // Sensor rows
-    for (const sensor of state.sensors) {
-      const s = document.createElement('div');
-      s.className = 'pow-sensor';
-      s.textContent = sensor;
-      gridEl.appendChild(s);
-      for (const band of state.bands) {
-        const cell = document.createElement('div');
-        cell.className = 'pow-cell';
-        const key = `${sensor}/${band}`;
-        cell.dataset.key = key;
-        cell.title = key;
-        cell.textContent = '-';
-        gridEl.appendChild(cell);
-      }
-    }
-  }
-
-  function colorFor(norm) {
-    // norm: 0..1 -> light blue to deep blue
-    const l = 95 - Math.round(60 * Math.max(0, Math.min(1, norm)));
-    const color = `hsl(220, 85%, ${l}%)`;
-    const text = l < 60 ? '#fff' : '#000';
-    return { bg: color, fg: text };
-  }
-
-  function updateGrid(values) {
-    if (!gridEl || !Array.isArray(values) || values.length === 0) return;
-    // Ensure rollingMax length
-    if (!Array.isArray(state.rollingMax) || state.rollingMax.length !== values.length) {
-      state.rollingMax = Array(values.length).fill(1);
-    }
-    // update each cell
-    for (const sensor of state.sensors) {
-      for (const band of state.bands) {
-        const key = `${sensor}/${band}`;
-        const i = state.indexByLabel[key];
-        if (typeof i !== 'number') continue;
-        const v = values[i] ?? 0;
-        // rolling max with gentle decay
-        const prev = state.rollingMax[i] || 1;
-        const updatedMax = Math.max(v, prev * 0.98, 1e-6);
-        state.rollingMax[i] = updatedMax;
-        const norm = Math.log10(1 + Math.max(0, v)) / Math.log10(1 + updatedMax);
-        const { bg, fg } = colorFor(norm);
-        const cell = gridEl.querySelector(`.pow-cell[data-key="${CSS.escape(key)}"]`);
-        if (cell) {
-          cell.style.backgroundColor = bg;
-          cell.style.color = fg;
-          cell.textContent = (Math.round((v + Number.EPSILON) * 1000) / 1000).toString();
-        }
-      }
-    }
-  }
 
   function connect() {
     const token = localStorage.getItem('dashboard_token');
@@ -134,20 +47,22 @@
             state.bands = derived.bands;
             state.indexByLabel = derived.indexByLabel;
             state.rollingMax = Array(labs.length).fill(1);
-            buildGrid();
+            buildGrid(gridEl, state);
           }
           return;
         }
         if (msg.type === 'pow') {
           const p = msg.payload || {};
           const arr = p.pow || [];
+          state.lastPow = arr;
           const t = p.time ? new Date(p.time * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
           powTimeEl.textContent = t;
           powLenEl.textContent = String(arr.length);
           if (powSidEl) powSidEl.textContent = p.sid || '-';
-          // If we don't have labels yet but got a payload with labels key order (rare), keep raw
           if (state.labels.length && state.sensors.length && state.bands.length) {
-            updateGrid(arr);
+            updateGrid(gridEl, state, arr);
+            const haveAll = TOPO_SENSORS.every(s => state.labels.some(l => l.startsWith(s + '/')));
+            if (haveAll) updateTopomapsFromPowArray(arr, topoCanvases, state);
           }
           powEl.textContent = JSON.stringify(arr, null, 2);
         }
@@ -192,10 +107,23 @@
   // Raw toggle
   toggleRaw?.addEventListener('change', () => {
     const showRaw = !!toggleRaw.checked;
-    if (showRaw) {
-      powEl.classList.remove('hidden');
+    if (showRaw) powEl.classList.remove('hidden');
+    else powEl.classList.add('hidden');
+  });
+
+  // Label toggle
+  toggleLabels?.addEventListener('change', () => {
+    state.showLabels = !!toggleLabels.checked;
+    if (state.lastPow && state.labels.length) {
+      updateTopomapsFromPowArray(state.lastPow, topoCanvases, state, true);
     } else {
-      powEl.classList.add('hidden');
+      for (const key of Object.keys(topoCanvases)) {
+        const c = topoCanvases[key];
+        if (!c) continue;
+        const ctx = c.getContext('2d');
+        drawHeadOverlay(ctx, c.width, c.height, { showLabels: state.showLabels });
+      }
     }
   });
 })();
+
