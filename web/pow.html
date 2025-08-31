@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Frequency Band (pow)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Frequency Band (pow)</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width:280px" />
+          <button id="saveHeadset">Save ID</button>
+          <button id="start">Start pow</button>
+          <button id="stop">Stop pow</button>
+        </div>
+        <p class="muted">配列の順序はヘッドセットのチャンネル構成に依存します。Insight の一例: ['AF3/theta','AF3/alpha','AF3/betaL','AF3/betaH','AF3/gamma', 'T7/theta', ... , 'AF4/gamma']</p>
+        <div>最新時刻: <span id="powTime">-</span></div>
+        <div>要素数: <span id="powLen">-</span></div>
+        <pre id="pow" class="log"></pre>
+      </section>
+    </main>
+    <script src="/pow.js"></script>
+  </body>
+  </html>

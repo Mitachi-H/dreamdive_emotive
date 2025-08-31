@@ -140,9 +140,10 @@ function createApp(cortex) {
   });
 
   // Stream control: start/stop pow subscription
-  app.post("/api/stream/pow/start", apiAuth, limiter, async (_req, res) => {
+  app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
-      await cortex.ensureReadyForStreams();
+      const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
+      await cortex.ensureReadyForStreams(headsetId);
       await cortex.subscribe(["pow"]);
       res.json({ ok: true });
     } catch (err) {

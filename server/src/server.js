@@ -68,17 +68,8 @@ async function start() {
   }
 
   try {
-    // Connect and subscribe (adjust streams as needed)
-    await cortex.connect();
-    await cortex.authorize();
-    try {
-      const hid = await cortex.ensureHeadsetConnected();
-      await cortex.createSession("active", hid);
-    } catch (e) {
-      console.warn('Headset connection/session warning:', e.message || e);
-      // Fallback to open session if active fails
-      if (!cortex.sessionId) await cortex.createSession("open");
-    }
+    // Use official-like flow to get ready
+    await cortex.prepare();
     await cortex.subscribe(["pow"]);
   } catch (err) {
     console.error("Failed to initialize Cortex flow:", err.message || err);
