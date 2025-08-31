@@ -133,6 +133,11 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'motion.html'));
   });
 
+  // Device information page
+  app.get('/device_information', (_req, res) => {
+    res.sendFile(path.join(webDir, 'device_information.html'));
+  });
+
   // Stream control: start/stop pow subscription
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
@@ -169,6 +174,27 @@ function createApp(cortex) {
   app.post("/api/stream/mot/stop", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.unsubscribe(["mot"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Stream control: start/stop dev (device information) subscription
+  app.post("/api/stream/dev/start", apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
+      await cortex.ensureReadyForStreams(headsetId);
+      await cortex.subscribe(["dev"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/stream/dev/stop", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.unsubscribe(["dev"]);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });

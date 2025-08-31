@@ -28,6 +28,8 @@ cortex.on("eeg", (payload) => broadcast({ type: "eeg", payload }));
 cortex.on("pow", (payload) => broadcast({ type: "pow", payload }));
 // Stream motion
 cortex.on("mot", (payload) => broadcast({ type: "mot", payload }));
+// Stream device information
+cortex.on("dev", (payload) => broadcast({ type: "dev", payload }));
 // Also broadcast labels for subscribed streams so the UI can render nicely
 cortex.on("new_data_labels", (payload) => broadcast({ type: "labels", payload }));
 

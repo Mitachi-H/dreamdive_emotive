@@ -60,4 +60,9 @@
 - 認証トークン: サーバの `API_AUTH_TOKEN` を設定した場合のみ必須。WebSocket/HTTP どちらも `Authorization: Bearer` で送信。
 - ラベル依存: pow/mot ともに `labels` メッセージで列名からインデックスを決定。ハードウェア差（INSIGHT/EPOC+ 等）により mot のラベルセット（`Q0–Q3` vs `GYRO*`）が変わります。
 - 3D 可視化: `viz3d.js` は四元数が無い場合でも ACC/MAG をデバイス座標のまま描画（方向の動きは確認可能）。投影は簡易パースペクティブです。
-- 追加ストリーム: 新規ストリームを追加する場合は pow/motion と同じ構成（HTML/JS とサーバの `/api/stream/<name>/start|stop` + WebSocket broadcast）を踏襲してください。
+  - 追加ストリーム: 新規ストリームを追加する場合は pow/motion と同じ構成（HTML/JS とサーバの `/api/stream/<name>/start|stop` + WebSocket broadcast）を踏襲してください。
+
+- `device_information.html` + `device_information.js`
+  - デバイス情報ストリーム dev を可視化（Battery / Signal / 各 EEG センサーの接触品質 CQ と OVERALL）。
+  - Start/Stop で `POST /api/stream/dev/start|stop` を呼び、WebSocket で `labels`（センサー配列）と `dev` を受信。
+  - dev の配列は `[Battery(0-4), Signal(0-1), [CQ..., OVERALL(0-100)], BatteryPercent(0-100)]` の構成です。

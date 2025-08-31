@@ -438,6 +438,7 @@ class CortexClient extends EventEmitter {
     }
     if (msg.dev) {
       this.emit('new_dev_data', { signal: msg.dev[1], dev: msg.dev[2], batteryPercent: msg.dev[3], time: t });
+      this.emit('dev', msg);
       return;
     }
     if (msg.met) {
