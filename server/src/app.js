@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const config = require("./config");
 const { apiAuth } = require("./utils/auth");
+const streamRefs = require("./utils/streamManager");
 
 // Build an Express app with routes wired to a provided Cortex-like client.
 function createApp(cortex) {
@@ -214,22 +215,61 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'Records.html'));
   });
 
-  // Stream control: start/stop pow subscription
+  // Helpers to hash remote address for fallback client identity
+  const clientKeyFromReq = (req) => {
+    const hdrId = req.get('x-client-id');
+    if (hdrId) return String(hdrId);
+    if (req.body && req.body.clientId) return String(req.body.clientId);
+    // Fallback: remote IP
+    return String(req.ip || req.connection?.remoteAddress || '');
+  };
+
+  // Stream control: start/stop pow subscription with ref counting
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
       const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
-      await cortex.ensureReadyForStreams(headsetId);
-      await cortex.subscribe(["pow"]);
-      res.json({ ok: true });
+      const clientId = clientKeyFromReq(req);
+      const { first } = streamRefs.start('pow', clientId);
+      if (first) {
+        await cortex.ensureReadyForStreams(headsetId);
+        await cortex.subscribe(["pow"]);
+      }
+      const status = streamRefs.status('pow');
+      res.json({ ok: true, status });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });
     }
   });
 
-  app.post("/api/stream/pow/stop", apiAuth, limiter, async (_req, res) => {
+  app.post("/api/stream/pow/stop", apiAuth, limiter, express.json(), async (req, res) => {
     try {
-      await cortex.unsubscribe(["pow"]);
-      res.json({ ok: true });
+      const clientId = clientKeyFromReq(req);
+      const { empty } = streamRefs.stop('pow', clientId);
+      if (empty) await cortex.unsubscribe(["pow"]);
+      const status = streamRefs.status('pow');
+      res.json({ ok: true, status });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Pow: status and renew endpoints
+  app.get('/api/stream/pow/status', apiAuth, limiter, async (_req, res) => {
+    try {
+      const status = streamRefs.status('pow');
+      res.json({ ok: true, status });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post('/api/stream/pow/renew', apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const clientId = clientKeyFromReq(req);
+      const ttlMs = req.body && req.body.ttlMs ? Number(req.body.ttlMs) : undefined;
+      streamRefs.renew('pow', clientId, ttlMs);
+      const status = streamRefs.status('pow');
+      res.json({ ok: true, status });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });
     }

@@ -22,6 +22,17 @@ import { TOPO_SENSORS, drawHeadOverlay, updateTopomapsFromPowArray } from './pow
     gamma: document.getElementById('topo-gamma'),
   };
 
+  // Persisted client id for ref-counted subscriptions
+  function getClientId() {
+    let id = localStorage.getItem('client_id');
+    if (!id) {
+      try { id = (self.crypto && crypto.randomUUID && crypto.randomUUID()) || null; } catch (_) {}
+      if (!id) id = 'c_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('client_id', id);
+    }
+    return id;
+  }
+
   const getHeaders = () => {
     const h = {};
     const t = localStorage.getItem('dashboard_token');
@@ -73,24 +84,49 @@ import { TOPO_SENSORS, drawHeadOverlay, updateTopomapsFromPowArray } from './pow
     ws.addEventListener('error', () => {});
   }
 
+  let renewTimer = null;
+  function startRenew() {
+    stopRenew();
+    const cid = getClientId();
+    renewTimer = setInterval(async () => {
+      try {
+        await fetch('/api/stream/pow/renew', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getHeaders() },
+          body: JSON.stringify({ clientId: cid })
+        });
+      } catch (_) {}
+    }, 30_000);
+  }
+  function stopRenew() {
+    if (renewTimer) clearInterval(renewTimer);
+    renewTimer = null;
+  }
+
   startBtn.addEventListener('click', async () => {
     try {
       const hid = headsetIdInput.value.trim() || localStorage.getItem('headset_id') || undefined;
       const res = await fetch('/api/stream/pow/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getHeaders() },
-        body: JSON.stringify({ headsetId: hid })
+        body: JSON.stringify({ headsetId: hid, clientId: getClientId() })
       });
       const j = await res.json();
       if (!j.ok) alert('start error: ' + (j.error || JSON.stringify(j)));
+      else startRenew();
     } catch (e) { alert('start fetch error: ' + String(e)); }
   });
 
   stopBtn.addEventListener('click', async () => {
     try {
-      const res = await fetch('/api/stream/pow/stop', { method: 'POST', headers: getHeaders() });
+      const res = await fetch('/api/stream/pow/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
+        body: JSON.stringify({ clientId: getClientId() })
+      });
       const j = await res.json();
       if (!j.ok) alert('stop error: ' + (j.error || JSON.stringify(j)));
+      stopRenew();
     } catch (e) { alert('stop fetch error: ' + String(e)); }
   });
 
@@ -125,5 +161,19 @@ import { TOPO_SENSORS, drawHeadOverlay, updateTopomapsFromPowArray } from './pow
       }
     }
   });
-})();
 
+  // Attempt to stop gracefully when leaving the page
+  window.addEventListener('beforeunload', () => {
+    try {
+      const cid = getClientId();
+      const body = JSON.stringify({ clientId: cid });
+      // Keepalive fetch preserves Authorization headers
+      fetch('/api/stream/pow/stop', {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
+        body,
+      }).catch(() => {});
+    } catch (_) {}
+  });
+})();

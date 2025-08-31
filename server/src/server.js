@@ -7,6 +7,7 @@ const config = require("./config");
 const CortexClient = require("./cortexClient");
 const { createApp } = require("./app");
 const { isTokenValid } = require("./utils/auth");
+const streamRefs = require("./utils/streamManager");
 const cortex = new CortexClient(config.cortex);
 const app = createApp(cortex);
 const server = http.createServer(app);
@@ -89,6 +90,20 @@ async function start() {
   } catch (err) {
     console.error("Failed to initialize Cortex flow:", err.message || err);
   }
+  // Optional: mark AUTO_CONNECT as a holder so accidental stop doesn't unsubscribe
+  try { streamRefs.start('pow', 'AUTO_CONNECT'); } catch (_) {}
 }
 
 start();
+
+// Periodically prune expired holders; unsubscribe if stream becomes empty
+setInterval(async () => {
+  try {
+    const empties = streamRefs.prune();
+    for (const s of empties) {
+      if (s === 'pow') {
+        try { await cortex.unsubscribe([s]); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}, 30_000);

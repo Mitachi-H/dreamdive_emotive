@@ -32,13 +32,34 @@ async function http(path, { method = 'GET', headers = {}, body } = {}) {
   return data;
 }
 
+function getClientId() {
+  try {
+    let id = localStorage.getItem('client_id');
+    if (!id) {
+      try { id = (self.crypto && crypto.randomUUID && crypto.randomUUID()) || null; } catch (_) {}
+      if (!id) id = 'c_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('client_id', id);
+    }
+    return id;
+  } catch (_) {
+    return 'c_' + Math.random().toString(36).slice(2);
+  }
+}
+
 const api = {
   get: (path) => http(path),
   post: (path, body) => http(path, { method: 'POST', body }),
   stream: {
-    start: (type, { headsetId, subscribeStreams } = {}) =>
-      http(`/api/stream/${encodeURIComponent(type)}/start`, { method: 'POST', body: { headsetId, subscribeStreams } }),
-    stop: (type) => http(`/api/stream/${encodeURIComponent(type)}/stop`, { method: 'POST' }),
+    start: (type, { headsetId, subscribeStreams, clientId } = {}) =>
+      http(`/api/stream/${encodeURIComponent(type)}/start`, {
+        method: 'POST',
+        body: { headsetId, subscribeStreams, clientId: clientId || getClientId() },
+      }),
+    stop: (type, { clientId } = {}) =>
+      http(`/api/stream/${encodeURIComponent(type)}/stop`, {
+        method: 'POST',
+        body: { clientId: clientId || getClientId() },
+      }),
   },
   headset: {
     list: () => http('/api/headset'),
@@ -89,4 +110,3 @@ function wsConnect({ onMessage, onType = {}, onOpen, onClose, onError, autoRecon
 }
 
 export { auth, api, wsConnect };
-
