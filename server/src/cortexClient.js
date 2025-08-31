@@ -433,6 +433,7 @@ class CortexClient extends EventEmitter {
     }
     if (msg.mot) {
       this.emit('new_mot_data', { mot: msg.mot, time: t });
+      this.emit('mot', msg); // keep compatibility with server broadcast pattern
       return;
     }
     if (msg.dev) {

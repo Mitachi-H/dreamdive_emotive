@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Motion (mot)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Motion (mot)</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div class="row" style="gap: 8px; align-items: center; flex-wrap: wrap">
+          <input
+            id="headsetId"
+            placeholder="Headset ID (optional)"
+            style="min-width: 280px"
+          />
+          <button id="saveHeadset">Save ID</button>
+          <button id="start">Start motion</button>
+          <button id="stop">Stop motion</button>
+        </div>
+        <div class="row small" style="margin-top: 6px">
+          <div>最新時刻: <span id="motTime">-</span></div>
+          <div>要素数: <span id="motLen">-</span></div>
+          <div>sid: <span id="motSid">-</span></div>
+        </div>
+
+        <div class="muted small" style="margin-top: 12px">
+          <p>
+            Motion センサーのストリーム。新しいヘッドセットでは <code>Q0–Q3</code>（四元数）、
+            加速度 <code>ACCX/Y/Z</code>、磁気 <code>MAGX/Y/Z</code> が含まれます。古い機種では 
+            <code>GYROX/Y/Z</code> が含まれます。
+          </p>
+        </div>
+
+        <div class="row" style="align-items: center; gap: 12px; margin-top: 8px">
+          <div class="small muted">3D Visualization</div>
+          <button id="calibrate">Calibrate (set current as 0)</button>
+          <button id="resetCalib">Reset</button>
+          <label class="small"><input type="checkbox" id="mirror" checked /> Mirror</label>
+          <div class="small">
+            yaw(Y): <span id="yaw">-</span>° /
+            pitch(X): <span id="pitch">-</span>° /
+            roll(Z): <span id="roll">-</span>°
+          </div>
+        </div>
+        <div style="display:flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px">
+          <canvas id="viz3d" width="380" height="380" style="background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset"></canvas>
+          <div class="small muted" style="max-width: 420px">
+            <p>矢印はヘッドセットの前方方向（+Z）を示します。Calibrate で現在の向きを 0（正面）に補正します。Mirror を外すと左右を反転しません。</p>
+            <p style="margin-top:8px">
+              可視化: <span style="color:#888">灰</span>=向き（+Z）、<span style="color:#22c55e">緑</span>=加速度ACC、<span style="color:#a855f7">紫</span>=磁気MAG、
+              軸: <span style="color:#e11">X</span>/<span style="color:#1b1">Y</span>/<span style="color:#17f">Z</span>
+            </p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px">
+          <div>
+            <div class="small muted">COUNTER / INTERPOLATED</div>
+            <div id="counterBox" class="log" style="height: auto; color: var(--fg); background: #8881"></div>
+          </div>
+          <div>
+            <div class="small muted">Quaternion (Q0–Q3) / Gyro (X/Y/Z)</div>
+            <div id="rotBox" class="log" style="height: auto; color: var(--fg); background: #8881"></div>
+          </div>
+          <div>
+            <div class="small muted">Accelerometer (ACCX/Y/Z)</div>
+            <div id="accBox" class="log" style="height: auto; color: var(--fg); background: #8881"></div>
+          </div>
+          <div>
+            <div class="small muted">Magnetometer (MAGX/Y/Z)</div>
+            <div id="magBox" class="log" style="height: auto; color: var(--fg); background: #8881"></div>
+          </div>
+        </div>
+
+        <details style="margin-top: 12px">
+          <summary>Raw labels / array</summary>
+          <div class="small" style="margin: 6px 0">labels:</div>
+          <pre id="labels" class="log" style="height: auto"></pre>
+          <div class="small" style="margin: 6px 0">mot array:</div>
+          <pre id="motRaw" class="log"></pre>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/motion.js"></script>
+  </body>
+  </html>
