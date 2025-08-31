@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Headset</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Headset</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button id="refresh">Refresh</button>
+        </div>
+        <div id="status" class="muted">ロード待機中…</div>
+        <pre id="error" class="log" style="background:#8008;color:#fff"></pre>
+        <div id="list"></div>
+      </section>
+    </main>
+    <script src="/headset.js"></script>
+  </body>
+  </html>
+

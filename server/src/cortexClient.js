@@ -19,6 +19,7 @@ class CortexClient extends EventEmitter {
     this.requestId = 1;
     this.authToken = null;
     this.sessionId = null;
+    this.headsetId = null;
   }
 
   async connect() {
@@ -88,12 +89,14 @@ class CortexClient extends EventEmitter {
     return this.authToken;
   }
 
-  async createSession(status = 'open') {
+  async createSession(status = 'open', headsetId) {
     if (!this.authToken) throw new Error('Not authorized');
-    const result = await this._rpc('createSession', {
+    const params = {
       cortexToken: this.authToken,
       status,
-    });
+    };
+    if (headsetId) params.headset = headsetId;
+    const result = await this._rpc('createSession', params);
     this.sessionId = result?.id || result?.sessionId;
     this.emit('log', `Session created: ${this.sessionId}`);
     return this.sessionId;
@@ -108,6 +111,63 @@ class CortexClient extends EventEmitter {
     });
     this.emit('log', `Subscribed: ${streams.join(',')}`);
     return result;
+  }
+
+  async unsubscribe(streams = ['eeg']) {
+    if (!this.authToken || !this.sessionId) throw new Error('No session');
+    const result = await this._rpc('unsubscribe', {
+      cortexToken: this.authToken,
+      session: this.sessionId,
+      streams,
+    });
+    this.emit('log', `Unsubscribed: ${streams.join(',')}`);
+    return result;
+  }
+
+  async ensureReadyForStreams() {
+    await this.connect();
+    await this.authorize();
+    const hid = await this.ensureHeadsetConnected();
+    if (!this.sessionId) await this.createSession('active', hid);
+    return { sessionId: this.sessionId, headsetId: hid };
+  }
+
+  async queryHeadsets() {
+    const res = await this._rpc('queryHeadsets', {});
+    return res || [];
+  }
+
+  async controlDevice(command = 'refresh', headset) {
+    return this._rpc('controlDevice', {
+      command,
+      headset,
+    });
+  }
+
+  async ensureHeadsetConnected() {
+    let attempts = 0;
+    let connected;
+    let lastList = [];
+    while (attempts < 10 && !connected) {
+      const list = await this.queryHeadsets();
+      lastList = list;
+      connected = list.find((h) => h.status === 'connected');
+      if (!connected) {
+        const target = list[0];
+        if (target) {
+          try { await this.controlDevice('connect', target.id); } catch (_) {}
+        } else {
+          // ask Cortex to refresh discovery if nothing listed
+          try { await this.controlDevice('refresh'); } catch (_) {}
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+      attempts++;
+    }
+    if (!connected) throw new Error('No connected headset');
+    this.headsetId = connected.id;
+    this.emit('log', `Headset connected: ${this.headsetId}`);
+    return this.headsetId;
   }
 
   // Convenience: ensure connection + auth token
@@ -161,6 +221,8 @@ class CortexClient extends EventEmitter {
       // Cortex stream data messages usually have e.g. `eeg`, `met`, `dev`, etc.
       if (msg?.sid && msg?.eeg) {
         this.emit('eeg', msg);
+      } else if (msg?.pow) {
+        this.emit('pow', msg);
       } else if (msg?.warning) {
         this.emit('log', `Cortex warning: ${JSON.stringify(msg.warning)}`);
       }

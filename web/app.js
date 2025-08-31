@@ -1,6 +1,7 @@
 (() => {
   const statusEl = document.getElementById('status');
   const logEl = document.getElementById('log');
+  // Root page keeps a minimal log; no pow auto-start here.
 
   const log = (msg) => {
     const t = new Date().toLocaleTimeString();
@@ -22,6 +23,7 @@
         const msg = JSON.parse(ev.data);
         if (msg.type === 'hello') log(`server: ${msg.message}`);
         if (msg.type === 'eeg') log(`eeg: ${JSON.stringify(msg.payload).slice(0, 200)}…`);
+        // Root does not render pow. Open /pow to see band power stream.
       } catch (e) {
         log(`message: ${String(ev.data).slice(0, 200)}…`);
       }

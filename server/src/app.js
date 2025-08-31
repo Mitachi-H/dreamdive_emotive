@@ -92,6 +92,73 @@ function createApp(cortex) {
     }
   });
 
+  // Headset info: query and control
+  app.get("/api/headset", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.connect();
+      const list = await cortex.queryHeadsets();
+      res.json({ ok: true, headsets: list });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/headset/refresh", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.connect();
+      await cortex.controlDevice('refresh');
+      const list = await cortex.queryHeadsets();
+      res.json({ ok: true, headsets: list });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/headset/connect", apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      await cortex.connect();
+      const { id } = req.body || {};
+      if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
+      await cortex.controlDevice('connect', id);
+      const list = await cortex.queryHeadsets();
+      res.json({ ok: true, headsets: list });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Headset page
+  app.get('/headset', (_req, res) => {
+    const webDir = path.join(__dirname, '..', '..', 'web');
+    res.sendFile(path.join(webDir, 'headset.html'));
+  });
+
+  // Pow page
+  app.get('/pow', (_req, res) => {
+    const webDir = path.join(__dirname, '..', '..', 'web');
+    res.sendFile(path.join(webDir, 'pow.html'));
+  });
+
+  // Stream control: start/stop pow subscription
+  app.post("/api/stream/pow/start", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.ensureReadyForStreams();
+      await cortex.subscribe(["pow"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/stream/pow/stop", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.unsubscribe(["pow"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
   return app;
 }
 

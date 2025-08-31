@@ -24,6 +24,7 @@ function broadcast(obj) {
 cortex.on("log", (m) => console.log("[cortex]", m));
 cortex.on("error", (e) => console.error("[cortex:error]", e.message || e));
 cortex.on("eeg", (payload) => broadcast({ type: "eeg", payload }));
+cortex.on("pow", (payload) => broadcast({ type: "pow", payload }));
 
 // Client connections (optional token check via ?token=)
 wss.on("connection", (ws, req) => {
@@ -70,8 +71,15 @@ async function start() {
     // Connect and subscribe (adjust streams as needed)
     await cortex.connect();
     await cortex.authorize();
-    await cortex.createSession("open");
-    await cortex.subscribe(["eeg"]);
+    try {
+      const hid = await cortex.ensureHeadsetConnected();
+      await cortex.createSession("active", hid);
+    } catch (e) {
+      console.warn('Headset connection/session warning:', e.message || e);
+      // Fallback to open session if active fails
+      if (!cortex.sessionId) await cortex.createSession("open");
+    }
+    await cortex.subscribe(["pow"]);
   } catch (err) {
     console.error("Failed to initialize Cortex flow:", err.message || err);
   }
