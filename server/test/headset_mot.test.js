@@ -41,6 +41,9 @@ describe('Motion stream control and page', () => {
     const r = await request(app).get('/motion');
     expect(r.status).toBe(200);
     expect(r.headers['content-type']).toMatch(/html/);
+    // basic content checks
+    expect(r.text).toMatch(/3D Visualization/);
+    expect(r.text).toMatch(/id="calibrate"/);
+    expect(r.text).toMatch(/<script type="module" src="\/motion.js"><\/script>/);
   });
 });
-

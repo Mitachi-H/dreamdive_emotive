@@ -22,5 +22,25 @@ describe('CortexClient mot helpers', () => {
     });
     c._handleStreamData(payload);
   });
-});
 
+  test('subscribe emits new_data_labels for mot success', async () => {
+    const c = new CortexClient({});
+    c.authToken = 't';
+    c.sessionId = 's';
+    const cols = ['COUNTER_MEMS','INTERPOLATED_MEMS','Q0','Q1','Q2','Q3','ACCX','ACCY','ACCZ','MAGX','MAGY','MAGZ'];
+    // Monkey-patch _rpc to simulate subscribe result
+    c._rpc = jest.fn().mockResolvedValue({
+      failure: [],
+      success: [{ streamName: 'mot', cols }],
+    });
+
+    const seen = new Promise((resolve) => {
+      c.on('new_data_labels', (p) => resolve(p));
+    });
+
+    await c.subscribe(['mot']);
+    const payload = await seen;
+    expect(payload).toEqual({ streamName: 'mot', labels: cols });
+    expect(c._rpc).toHaveBeenCalledWith('subscribe', expect.any(Object));
+  });
+});
