@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sample: Band Power</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      .log { height: 200px; overflow: auto; }
+      .badge { background: #eef; border: 1px solid #99c; border-radius: 4px; padding: 2px 6px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sample: Band Power (pow)</h1>
+      <p class="muted">SDK を使った最小サンプル。配列長やラベルは <span class="badge">labels</span> メッセージで受信できます。</p>
+    </header>
+    <main>
+      <section class="row">
+        <button id="start">Start pow</button>
+        <button id="stop">Stop pow</button>
+        <span id="wsstatus" class="muted">WS: connecting…</span>
+      </section>
+      <section>
+        <h3>Latest</h3>
+        <div id="latest" class="mono"></div>
+        <div id="labels" class="muted"></div>
+      </section>
+      <section>
+        <h3>Log</h3>
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+  </html>
+

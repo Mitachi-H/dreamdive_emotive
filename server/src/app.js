@@ -21,6 +21,52 @@ function createApp(cortex) {
   const webDir = path.join(__dirname, "..", "..", "web");
   // Disable directory redirects so /pow (our route) doesn't 301 to /pow/
   app.use(express.static(webDir, { redirect: false }));
+  // Dashboards discovery API (non-invasive): reads web/dashboards/*/manifest.json
+  app.get("/api/dashboards", apiAuth, async (_req, res) => {
+    try {
+      const dashboardsRoot = path.join(webDir, "dashboards");
+      let items = [];
+      try {
+        const entries = fs.readdirSync(dashboardsRoot, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isDirectory()) continue;
+          const dir = path.join(dashboardsRoot, ent.name);
+          const manifestPath = path.join(dir, "manifest.json");
+          if (!fs.existsSync(manifestPath)) continue;
+          try {
+            const raw = fs.readFileSync(manifestPath, "utf8");
+            const manifest = JSON.parse(raw);
+            items.push({
+              name: ent.name,
+              title: manifest.title || ent.name,
+              description: manifest.description || "",
+              path: `/dashboards/${encodeURIComponent(ent.name)}`,
+              icon: manifest.icon || null,
+              tags: Array.isArray(manifest.tags) ? manifest.tags : [],
+            });
+          } catch (_) { /* skip broken manifest */ }
+        }
+      } catch (_) { /* no dashboards dir */ }
+      res.json({ ok: true, dashboards: items });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Convenience routes so /dashboards and /dashboards/:name work without trailing slash
+  app.get("/dashboards", (_req, res) => {
+    res.sendFile(path.join(webDir, "dashboards", "index.html"));
+  });
+  // Only accept safe names; avoid matching files like /dashboards/index.js
+  // Redirect to a trailing slash so relative imports like `./index.js` resolve under the folder
+  app.get("/dashboards/:name([A-Za-z0-9_-]+)", (req, res) => {
+    const name = req.params.name;
+    const dir = path.join(webDir, "dashboards", name);
+    try {
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return res.status(404).send("Not Found");
+    } catch (_) { return res.status(404).send("Not Found"); }
+    res.redirect(302, `/dashboards/${encodeURIComponent(name)}/`);
+  });
   // Serve exported files for download
   const exportsRoot = path.join(__dirname, "..", "exports");
   try { fs.mkdirSync(exportsRoot, { recursive: true }); } catch (_) {}

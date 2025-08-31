@@ -55,6 +55,21 @@
 - `motion/`
   - `viz3d.js`: 3D 描画・四元数/ベクトル計算・スケーリング・トレイルを担当（モジュール化）。
 
+## カスタムダッシュボード（再利用可能な SDK）
+
+- 共有 SDK: `web/lib/dashboard-sdk.js`
+  - `auth`: トークン取得/設定と `Authorization` ヘッダ生成
+  - `api`: `api.stream.start/stop`, `api.headset.*`, `api.record.*`, `api.dashboards.list`
+  - `wsConnect(opts)`: WebSocket 自動再接続＋型別ハンドラ（`onType: { pow: fn, mot: fn, ... }`）
+- 追加手順:
+  1. `web/dashboards/<your-name>/` を作成
+  2. `manifest.json`（title / description / tags を記述）
+  3. `index.html`（`<script type="module" src="./index.js">` を読み込み）
+  4. `index.js` 内で SDK を import して実装
+- 一覧: `/dashboards` は `manifest.json` を自動スキャンして一覧表示（サーバの `/api/dashboards`）。
+
+サンプル: `web/dashboards/sample/` を参照（pow の開始/停止と最新値表示）。
+
 ## 開発ノート
 
 - 認証トークン: サーバの `API_AUTH_TOKEN` を設定した場合のみ必須。WebSocket/HTTP どちらも `Authorization: Bearer` で送信。

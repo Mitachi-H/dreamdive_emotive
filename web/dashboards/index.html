@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboards</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; }
+      .card h3 { margin: 0 0 8px; font-size: 1.1rem; }
+      .muted { color: #666; font-size: .9rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Custom Dashboards</h1>
+      <p class="muted">web/dashboards/* に追加すると自動で一覧に表示されます。</p>
+    </header>
+    <main>
+      <div id="status">読み込み中…</div>
+      <div id="list" class="grid"></div>
+    </main>
+    <script type="module">
+      import { api } from '/lib/dashboard-sdk.js';
+      const status = document.getElementById('status');
+      const list = document.getElementById('list');
+      function createCard(d) {
+        const a = document.createElement('a');
+        a.href = d.path;
+        a.className = 'card';
+        const h3 = document.createElement('h3');
+        h3.textContent = d.title || d.name;
+        const p = document.createElement('p');
+        p.className = 'muted'; p.textContent = d.description || '';
+        a.appendChild(h3); a.appendChild(p);
+        return a;
+      }
+      api.dashboards.list().then((r) => {
+        status.textContent = '';
+        (r.dashboards || []).forEach((d) => list.appendChild(createCard(d)));
+        if (!list.childElementCount) status.textContent = 'ダッシュボードがありません。web/dashboards に追加してください。';
+      }).catch((e) => {
+        status.textContent = '読み込み失敗: ' + e.message;
+      });
+    </script>
+  </body>
+  </html>
+

@@ -76,6 +76,10 @@ UI は `web/` にあり、`/` で静的配信します（リダイレクト無�
 - `POST /api/stream/pow/stop` `unsubscribe(['pow'])`
 - `POST /api/stream/mot/start` JSON `{ headsetId? }` 実行後 `subscribe(['mot'])`
 - `POST /api/stream/mot/stop` `unsubscribe(['mot'])`
+ 
+ダッシュボード:
+- `GET /api/dashboards` `web/dashboards/*/manifest.json` をスキャンして一覧を返す
+  - 返却: `{ ok: true, dashboards: [{ name, title, description, path, icon?, tags? }] }`
 
 レート制限： 60 秒あたり 120 リクエスト（`express-rate-limit`）。
 
@@ -88,8 +92,15 @@ UI は `web/` にあり、`/` で静的配信します（リダイレクト無�
   - `eeg` Cortex からの EEG 生パケット（互換のためそのまま）
   - `pow` 周波数帯ストリーム
   - `mot` モーションストリーム（四元数/加速度/磁気/ジャイロのいずれか）
+  - `dev` デバイス情報
+  - `eq` EEG 品質
+  - `met` パフォーマンスメトリクス
+  - `com` メンタルコマンド
+  - `fac` 表情
 
 クライアントは `web/pow.js` / `web/motion.js` が参照する形式に合わせて受信します。
+
+ダッシュボード向けには `web/lib/dashboard-sdk.js` の `wsConnect` を利用してください。
 
 ## Cortex 接続フロー（概要）
 
