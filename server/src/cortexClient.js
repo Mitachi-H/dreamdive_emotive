@@ -24,7 +24,9 @@ class CortexClient extends EventEmitter {
   async connect() {
     if (this.ws) return;
     await new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.url, { rejectUnauthorized: false });
+      const tlsEnv = String(process.env.NODE_TLS_REJECT_UNAUTHORIZED || '').toLowerCase();
+      const rejectUnauthorized = !(tlsEnv === '0' || tlsEnv === 'false');
+      const ws = new WebSocket(this.url, { rejectUnauthorized });
       this.ws = ws;
 
       ws.on('open', () => {
@@ -106,6 +108,51 @@ class CortexClient extends EventEmitter {
     });
     this.emit('log', `Subscribed: ${streams.join(',')}`);
     return result;
+  }
+
+  // Convenience: ensure connection + auth token
+  async ensureAuthorized() {
+    if (!this.ws) await this.connect();
+    if (!this.authToken) await this.authorize();
+  }
+
+  // Authentication-related helpers
+  async getUserLogin() {
+    // This method may not require auth; call directly
+    return this._rpc('getUserLogin');
+  }
+
+  async hasAccessRight() {
+    const params = {
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      license: this.license,
+    };
+    if (this.authToken) params.cortexToken = this.authToken;
+    return this._rpc('hasAccessRight', params);
+  }
+
+  async getUserInformation() {
+    await this.ensureAuthorized();
+    return this._rpc('getUserInformation', {
+      cortexToken: this.authToken,
+    });
+  }
+
+  async getLicenseInfo() {
+    await this.ensureAuthorized();
+    return this._rpc('getLicenseInfo', {
+      cortexToken: this.authToken,
+      clientId: this.clientId,
+      license: this.license,
+    });
+  }
+
+  async requestAccess() {
+    return this._rpc('requestAccess', {
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+    });
   }
 
   _handleMessage(raw) {

@@ -29,6 +29,8 @@
    - `npm run start` (server ディレクトリ内)
    - もしくは、リポジトリ直下で: `npm --prefix server run start`
    - ブラウザで `http://localhost:3000` にアクセス
+   - 認証ページ: `http://localhost:3000/authentication` (Cortex 認証関連の情報を表示)
+     - 初回は Emotiv Launcher でアプリ承認が必要です。ページの「アクセス許可を要求」を押し、Launcher で承認してから「再取得」を押してください。
 
 注意: `wss://localhost:6868` は自己署名証明書です。開発目的に限り `NODE_TLS_REJECT_UNAUTHORIZED=0` を `.env` に設定できますが、本番では利用しないでください。
 
@@ -47,3 +49,11 @@
 - Socket.IO や SSE でのストリーミング実装
 - データ保存層 (暗号化 + アクセス制御)
 - CI によるシークレットスキャン導入
+
+## 追加エンドポイントとページ
+
+- `GET /api/authentication`: Cortex の以下メソッド結果を集約して返却
+  - `getUserLogin`, `hasAccessRight`, `getUserInformation`, `getLicenseInfo`
+  - 事前に Emotiv App でログイン済みであること。
+- `GET /authentication`: 上記 API を呼び出して結果を表示する簡易 UI ページ
+ - `POST /api/request-access`: アプリのアクセス許可を要求。Emotiv Launcher で承認操作が必要
