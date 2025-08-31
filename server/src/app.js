@@ -148,6 +148,11 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'Performance_metric.html'));
   });
 
+  // Mental command page
+  app.get('/Mental_command', (_req, res) => {
+    res.sendFile(path.join(webDir, 'Mental_command.html'));
+  });
+
   // Stream control: start/stop pow subscription
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
@@ -247,6 +252,27 @@ function createApp(cortex) {
   app.post("/api/stream/met/stop", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.unsubscribe(["met"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Stream control: start/stop com (mental command) subscription
+  app.post("/api/stream/com/start", apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
+      await cortex.ensureReadyForStreams(headsetId);
+      await cortex.subscribe(["com"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/stream/com/stop", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.unsubscribe(["com"]);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });

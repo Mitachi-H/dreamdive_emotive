@@ -420,6 +420,7 @@ class CortexClient extends EventEmitter {
     const t = msg.time;
     if (msg.com) {
       this.emit('new_com_data', { action: msg.com[0], power: msg.com[1], time: t });
+      this.emit('com', msg);
       return;
     }
     if (msg.fac) {

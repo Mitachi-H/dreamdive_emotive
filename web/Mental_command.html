@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mental Command (com)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Mental Command (com)</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div class="row" style="gap: 8px; align-items: center; flex-wrap: wrap">
+          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width: 280px" />
+          <button id="saveHeadset">Save ID</button>
+          <button id="start">Start mental command</button>
+          <button id="stop">Stop mental command</button>
+        </div>
+        <div class="row small" style="margin-top: 6px">
+          <div>最新時刻: <span id="comTime">-</span></div>
+          <div>sid: <span id="comSid">-</span></div>
+        </div>
+
+        <div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items:start; margin-top: 12px">
+          <div style="background:#8881; color:var(--fg); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px">
+            <div class="small muted">Action</div>
+            <div id="actText" style="font-size: 20px; font-weight: 700">-</div>
+          </div>
+          <div style="background:#8881; color:var(--fg); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px">
+            <div class="small muted">Power (0–1)</div>
+            <div id="powText" class="small">-</div>
+            <div style="height:10px; background:#0001; border-radius:999px; overflow:hidden">
+              <div id="powBar" style="height:100%; width:0%; background:linear-gradient(90deg, #dbeafe, #60a5fa, #2563eb)"></div>
+            </div>
+          </div>
+        </div>
+
+        <details style="margin-top: 12px">
+          <summary>Raw array</summary>
+          <div class="small" style="margin: 6px 0">com array:</div>
+          <pre id="comRaw" class="log"></pre>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/Mental_command.js"></script>
+  </body>
+  </html>
+

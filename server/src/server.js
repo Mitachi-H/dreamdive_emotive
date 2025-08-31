@@ -34,6 +34,8 @@ cortex.on("dev", (payload) => broadcast({ type: "dev", payload }));
 cortex.on("eq", (payload) => broadcast({ type: "eq", payload }));
 // Stream performance metrics
 cortex.on("met", (payload) => broadcast({ type: "met", payload }));
+// Stream mental command
+cortex.on("com", (payload) => broadcast({ type: "com", payload }));
 // Also broadcast labels for subscribed streams so the UI can render nicely
 cortex.on("new_data_labels", (payload) => broadcast({ type: "labels", payload }));
 

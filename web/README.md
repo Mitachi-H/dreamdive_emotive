@@ -76,3 +76,8 @@
   - パフォーマンスメトリクス met を可視化（eng/exc/lex/str/rel/int/attention と各 `.isActive`）。
   - Start/Stop で `POST /api/stream/met/start|stop` を呼び、WebSocket で `labels` と `met` を受信。
   - 値は 0..1（null の場合あり）。UI は 0..100 にスケールしたバーも併記します。
+
+- `Mental_command.html` + `Mental_command.js`
+  - メンタルコマンド com を可視化（action と power）。
+  - Start/Stop で `POST /api/stream/com/start|stop` を呼び、WebSocket で `com` を受信。
+  - ラベルは固定（["act","pow"]) なので `labels` メッセージは使用しません。
