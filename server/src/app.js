@@ -153,6 +153,11 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'Mental_command.html'));
   });
 
+  // Facial expression page
+  app.get('/Facial_expression', (_req, res) => {
+    res.sendFile(path.join(webDir, 'Facial_expression.html'));
+  });
+
   // Stream control: start/stop pow subscription
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
@@ -273,6 +278,27 @@ function createApp(cortex) {
   app.post("/api/stream/com/stop", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.unsubscribe(["com"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Stream control: start/stop fac (facial expression) subscription
+  app.post("/api/stream/fac/start", apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
+      await cortex.ensureReadyForStreams(headsetId);
+      await cortex.subscribe(["fac"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/stream/fac/stop", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.unsubscribe(["fac"]);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });

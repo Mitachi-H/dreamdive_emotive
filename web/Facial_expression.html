@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Facial Expression (fac)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Facial Expression (fac)</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div class="row" style="gap: 8px; align-items: center; flex-wrap: wrap">
+          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width: 280px" />
+          <button id="saveHeadset">Save ID</button>
+          <button id="start">Start facial expression</button>
+          <button id="stop">Stop facial expression</button>
+        </div>
+        <div class="row small" style="margin-top: 6px">
+          <div>最新時刻: <span id="facTime">-</span></div>
+          <div>sid: <span id="facSid">-</span></div>
+        </div>
+
+        <div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items:start; margin-top: 12px">
+          <div style="background:#8881; color:var(--fg); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px">
+            <div class="small muted">Eye Action</div>
+            <div id="eyeAct" style="font-size: 18px; font-weight: 700">-</div>
+          </div>
+          <div style="background:#8881; color:var(--fg); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px">
+            <div class="small muted">Upper Face</div>
+            <div id="uAct" style="font-weight:600">-</div>
+            <div class="small muted">Power (uPow)</div>
+            <div id="uPowText" class="small">-</div>
+            <div style="height:10px; background:#0001; border-radius:999px; overflow:hidden">
+              <div id="uPowBar" style="height:100%; width:0%; background:linear-gradient(90deg, #fde68a, #f59e0b, #b45309)"></div>
+            </div>
+          </div>
+          <div style="background:#8881; color:var(--fg); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:8px">
+            <div class="small muted">Lower Face</div>
+            <div id="lAct" style="font-weight:600">-</div>
+            <div class="small muted">Power (lPow)</div>
+            <div id="lPowText" class="small">-</div>
+            <div style="height:10px; background:#0001; border-radius:999px; overflow:hidden">
+              <div id="lPowBar" style="height:100%; width:0%; background:linear-gradient(90deg, #e9d5ff, #a78bfa, #7c3aed)"></div>
+            </div>
+          </div>
+        </div>
+
+        <details style="margin-top: 12px">
+          <summary>Raw array</summary>
+          <div class="small" style="margin: 6px 0">fac array:</div>
+          <pre id="facRaw" class="log"></pre>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/Facial_expression.js"></script>
+  </body>
+  </html>
+

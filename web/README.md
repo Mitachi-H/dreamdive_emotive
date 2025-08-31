@@ -81,3 +81,8 @@
   - メンタルコマンド com を可視化（action と power）。
   - Start/Stop で `POST /api/stream/com/start|stop` を呼び、WebSocket で `com` を受信。
   - ラベルは固定（["act","pow"]) なので `labels` メッセージは使用しません。
+
+- `Facial_expression.html` + `Facial_expression.js`
+  - 表情ストリーム fac を可視化（eyeAct / uAct+uPow / lAct+lPow）。
+  - Start/Stop で `POST /api/stream/fac/start|stop` を呼び、WebSocket で `fac` を受信。
+  - 可能なアクションは `getDetectionInfo({ detection: 'facialExpression' })` を参照。

@@ -425,6 +425,7 @@ class CortexClient extends EventEmitter {
     }
     if (msg.fac) {
       this.emit('new_fe_data', { eyeAct: msg.fac[0], uAct: msg.fac[1], uPow: msg.fac[2], lAct: msg.fac[3], lPow: msg.fac[4], time: t });
+      this.emit('fac', msg);
       return;
     }
     if (msg.eeg) {

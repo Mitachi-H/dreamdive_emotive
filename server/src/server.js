@@ -36,6 +36,8 @@ cortex.on("eq", (payload) => broadcast({ type: "eq", payload }));
 cortex.on("met", (payload) => broadcast({ type: "met", payload }));
 // Stream mental command
 cortex.on("com", (payload) => broadcast({ type: "com", payload }));
+// Stream facial expression
+cortex.on("fac", (payload) => broadcast({ type: "fac", payload }));
 // Also broadcast labels for subscribed streams so the UI can render nicely
 cortex.on("new_data_labels", (payload) => broadcast({ type: "labels", payload }));
 
