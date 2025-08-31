@@ -18,7 +18,8 @@ function createApp(cortex) {
 
   // Serve static dashboard
   const webDir = path.join(__dirname, "..", "..", "web");
-  app.use(express.static(webDir));
+  // Disable directory redirects so /pow (our route) doesn't 301 to /pow/
+  app.use(express.static(webDir, { redirect: false }));
 
   // Simple healthcheck
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
