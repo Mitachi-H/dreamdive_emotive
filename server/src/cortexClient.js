@@ -444,6 +444,7 @@ class CortexClient extends EventEmitter {
     }
     if (msg.met) {
       this.emit('new_met_data', { met: msg.met, time: t });
+      this.emit('met', msg); // broadcast-friendly
       return;
     }
     if (msg.pow) {

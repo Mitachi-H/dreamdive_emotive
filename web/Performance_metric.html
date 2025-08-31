@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Performance Metric (met)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Performance Metric (met)</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <div class="row" style="gap: 8px; align-items: center; flex-wrap: wrap">
+          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width: 280px" />
+          <button id="saveHeadset">Save ID</button>
+          <button id="start">Start metrics</button>
+          <button id="stop">Stop metrics</button>
+        </div>
+
+        <div class="row small" style="margin-top: 6px">
+          <div>最新時刻: <span id="metTime">-</span></div>
+          <div>sid: <span id="metSid">-</span></div>
+        </div>
+
+        <div id="metricsGrid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px"></div>
+
+        <details style="margin-top: 12px">
+          <summary>Raw labels / array</summary>
+          <div class="small" style="margin: 6px 0">met labels:</div>
+          <pre id="labels" class="log" style="height:auto"></pre>
+          <div class="small" style="margin: 6px 0">met array:</div>
+          <pre id="metRaw" class="log"></pre>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/Performance_metric.js"></script>
+  </body>
+  </html>
+

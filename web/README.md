@@ -71,3 +71,8 @@
   - EEG 品質ストリーム eq を可視化（batteryPercent / overall / sampleRateQuality と各センサー 0–4）。
   - Start/Stop で `POST /api/stream/eq/start|stop` を呼び、WebSocket で `labels`（センサー配列）と `eq` を受信。
   - eq の配列は `[batteryPercent(0-100), overall(0-100), sampleRateQuality(0..1 or -1), ...sensors(0-4)]` の構成です。
+
+- `Performance_metric.html` + `Performance_metric.js`
+  - パフォーマンスメトリクス met を可視化（eng/exc/lex/str/rel/int/attention と各 `.isActive`）。
+  - Start/Stop で `POST /api/stream/met/start|stop` を呼び、WebSocket で `labels` と `met` を受信。
+  - 値は 0..1（null の場合あり）。UI は 0..100 にスケールしたバーも併記します。
