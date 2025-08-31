@@ -22,11 +22,24 @@
           <a href="/EEG_Quality">EEG Quality (eq)</a> |
           <a href="/Performance_metric">Performance Metric (met)</a> |
           <a href="/Mental_command">Mental Command (com)</a> |
-          <a href="/Facial_expression">Facial Expression (fac)</a>
+          <a href="/Facial_expression">Facial Expression (fac)</a> |
+          <a href="/Records">Records</a>
         </p>
         <div id="status">WebSocket: connecting…</div>
         <p class="muted">トークンを有効化した場合は、ブラウザの DevTools コンソールで <code>localStorage.setItem('dashboard_token', 'YOUR_TOKEN')</code> を実行後に再読込してください。</p>
         <pre id="log" class="log"></pre>
+      </section>
+
+      <section>
+        <h2>Cortex API アクセスレベル（Basic のみ）</h2>
+        <p>Basic (BCI API) Includes:</p>
+        <ul>
+          <li>Mental Commands API</li>
+          <li>Facial Expression API</li>
+          <li>Frequency Band API</li>
+          <li>Motion Data API</li>
+          <li>Low-resolution Performance Metrics (0.1 Hz)</li>
+        </ul>
       </section>
     </main>
     <script src="/app.js"></script>

@@ -22,6 +22,7 @@ class CortexClient extends EventEmitter {
     this.sessionId = '';
     this.headsetId = '';
     this.isHeadsetConnected = false;
+    this.currentRecordId = '';
   }
 
   // Open WebSocket and wire message handlers
@@ -330,6 +331,87 @@ class CortexClient extends EventEmitter {
       }
     }
     throw new Error('subscribe retry exhausted');
+  }
+
+  // ----- Records -----
+  async createRecord({ title, description = '', subjectName, tags = [], experimentId } = {}) {
+    if (!this.authToken || !this.sessionId) throw new Error('No session');
+    if (!title) throw new Error('Missing title');
+    const params = {
+      cortexToken: this.authToken,
+      session: this.sessionId,
+      title,
+    };
+    if (description) params.description = description;
+    if (subjectName) params.subjectName = subjectName;
+    if (Array.isArray(tags) && tags.length) params.tags = tags;
+    if (typeof experimentId === 'number') params.experimentId = experimentId;
+    const res = await this._rpc('createRecord', params);
+    const rec = res && (res.record || res);
+    const uuid = rec && rec.uuid;
+    if (uuid) this.currentRecordId = uuid;
+    this.emit('log', `Record created: ${uuid || 'unknown'}`);
+    return { record: rec, sessionId: res && res.sessionId ? res.sessionId : this.sessionId };
+  }
+
+  async stopRecord() {
+    if (!this.authToken || !this.sessionId) throw new Error('No session');
+    const res = await this._rpc('stopRecord', {
+      cortexToken: this.authToken,
+      session: this.sessionId,
+    });
+    const rec = res && res.record;
+    if (rec && rec.uuid) this.currentRecordId = rec.uuid;
+    this.emit('log', `Record stopped: ${rec && rec.uuid ? rec.uuid : 'unknown'}`);
+    return { record: rec, sessionId: res && res.sessionId ? res.sessionId : this.sessionId };
+  }
+
+  async updateRecord({ recordId, title, description, tags } = {}) {
+    if (!this.authToken) throw new Error('Not authorized');
+    const record = recordId || this.currentRecordId;
+    if (!record) throw new Error('Missing record id');
+    const params = { cortexToken: this.authToken, record };
+    if (typeof title === 'string') params.title = title;
+    if (typeof description === 'string') params.description = description;
+    if (Array.isArray(tags)) params.tags = tags;
+    return this._rpc('updateRecord', params);
+  }
+
+  async exportRecord({ recordIds, folder, streamTypes, format = 'CSV', version = 'V2',
+    licenseIds = [], includeDemographics = false, includeSurvey = false, includeMarkerExtraInfos = false, includeDeprecatedPM = false } = {}) {
+    if (!this.authToken) throw new Error('Not authorized');
+    const ids = Array.isArray(recordIds) ? recordIds : [recordIds || this.currentRecordId].filter(Boolean);
+    if (!ids.length) throw new Error('Missing record id(s)');
+    if (!folder) throw new Error('Missing folder');
+    if (!Array.isArray(streamTypes) || !streamTypes.length) throw new Error('Missing streamTypes');
+    const params = {
+      cortexToken: this.authToken,
+      recordIds: ids,
+      folder,
+      streamTypes,
+      format,
+    };
+    if (format.toUpperCase() === 'CSV' && version) params.version = version;
+    if (Array.isArray(licenseIds) && licenseIds.length) params.licenseIds = licenseIds;
+    if (includeDemographics) params.includeDemographics = true;
+    if (includeSurvey) params.includeSurvey = true;
+    if (includeMarkerExtraInfos) params.includeMarkerExtraInfos = true;
+    if (includeDeprecatedPM) params.includeDeprecatedPM = true;
+    return this._rpc('exportRecord', params);
+  }
+
+  async exportRecordWithRetry(opts = {}, maxAttempts = 10, delayMs = 1000) {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        return await this.exportRecord(opts);
+      } catch (e) {
+        const code = this._extractErrorCode(e);
+        // Retry on generic errors; export may require waiting for record finalization
+        this.emit('log', `exportRecord retry ${i + 1}/${maxAttempts} (${code || e.message || e})`);
+        await this._sleep(delayMs);
+      }
+    }
+    throw new Error('exportRecord retry exhausted');
   }
 
   async unsubscribe(streams = ['eeg']) {

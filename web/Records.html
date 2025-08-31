@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Records</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Records</h1>
+      <p><a href="/">トップに戻る</a></p>
+    </header>
+    <main>
+      <section>
+        <h2>1. ヘッドセットと購読ストリーム選択</h2>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <input id="headsetId" placeholder="Headset ID (optional)" style="min-width:280px" />
+          <button id="saveHeadset">Save ID</button>
+        </div>
+        <div class="row small" style="margin-top:8px; gap:12px; flex-wrap:wrap">
+          <label><input type="checkbox" name="sub" value="eeg" checked /> eeg</label>
+          <label><input type="checkbox" name="sub" value="mot" /> mot</label>
+          <label><input type="checkbox" name="sub" value="pow" checked /> pow</label>
+          <label><input type="checkbox" name="sub" value="met" /> met</label>
+          <label><input type="checkbox" name="sub" value="com" /> com</label>
+          <label><input type="checkbox" name="sub" value="fac" /> fac</label>
+          <label><input type="checkbox" name="sub" value="dev" /> dev</label>
+          <label><input type="checkbox" name="sub" value="eq" /> eq</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. レコーディング</h2>
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
+          <input id="title" placeholder="Record title" style="min-width:320px" />
+          <input id="description" placeholder="Description (optional)" style="min-width:320px" />
+          <input id="subjectName" placeholder="Subject name (optional)" style="min-width:220px" />
+          <input id="tags" placeholder="Tags (comma separated)" style="min-width:220px" />
+          <button id="startRecord">Start Recording</button>
+          <button id="stopRecord" disabled>Stop Recording</button>
+        </div>
+        <div class="row small">
+          <div>sessionId: <span id="sessionId">-</span></div>
+          <div>recordId: <span id="recordId">-</span></div>
+          <div>Status: <span id="status">idle</span></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. エクスポート</h2>
+        <div class="row small" style="gap:12px; flex-wrap:wrap">
+          <label><input type="checkbox" name="exp" value="EEG" checked /> EEG</label>
+          <label><input type="checkbox" name="exp" value="MOTION" /> MOTION</label>
+          <label><input type="checkbox" name="exp" value="PM" /> PM</label>
+          <label><input type="checkbox" name="exp" value="BP" checked /> BP</label>
+          <label><input type="checkbox" name="exp" value="MC" /> MC</label>
+          <label><input type="checkbox" name="exp" value="FE" /> FE</label>
+        </div>
+        <div class="row small" style="gap:12px; flex-wrap:wrap; margin-top:6px">
+          <label><input type="radio" name="format" value="CSV" checked /> CSV V2</label>
+          <label><input type="radio" name="format" value="EDF" /> EDF</label>
+          <label><input type="radio" name="format" value="EDFPLUS" /> EDF+</label>
+          <label><input type="radio" name="format" value="BDFPLUS" /> BDF+</label>
+          <label title="Export EEGLAB-compatible markers CSV"><input type="checkbox" id="markerCSV" /> Markers CSV</label>
+          <label title="Include deprecated PM"><input type="checkbox" id="deprecatedPM" /> Deprecated PM</label>
+        </div>
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px">
+          <button id="exportRecord" disabled>Export & Show Downloads</button>
+        </div>
+        <div id="downloads" class="muted small" style="margin-top:10px"></div>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/Records.js"></script>
+  </body>
+  </html>
+

@@ -7,6 +7,9 @@ coverage/
 logs/
 *.log
 
+# Generated data (exports)
+server/exports/
+
 # Env & secrets (never commit real secrets)
 .env
 *.env

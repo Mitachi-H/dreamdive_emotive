@@ -1,5 +1,6 @@
 const path = require("path");
 const express = require("express");
+const fs = require("fs");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const config = require("./config");
@@ -20,6 +21,10 @@ function createApp(cortex) {
   const webDir = path.join(__dirname, "..", "..", "web");
   // Disable directory redirects so /pow (our route) doesn't 301 to /pow/
   app.use(express.static(webDir, { redirect: false }));
+  // Serve exported files for download
+  const exportsRoot = path.join(__dirname, "..", "exports");
+  try { fs.mkdirSync(exportsRoot, { recursive: true }); } catch (_) {}
+  app.use("/downloads", express.static(exportsRoot, { extensions: ["csv", "edf", "json", "bdf"] }));
 
   // Simple healthcheck
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
@@ -156,6 +161,11 @@ function createApp(cortex) {
   // Facial expression page
   app.get('/Facial_expression', (_req, res) => {
     res.sendFile(path.join(webDir, 'Facial_expression.html'));
+  });
+
+  // Records page
+  app.get('/Records', (_req, res) => {
+    res.sendFile(path.join(webDir, 'Records.html'));
   });
 
   // Stream control: start/stop pow subscription
@@ -300,6 +310,73 @@ function createApp(cortex) {
     try {
       await cortex.unsubscribe(["fac"]);
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // ----- Records API -----
+  // Start a record, optionally subscribe to selected streams first
+  app.post('/api/record/start', apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const { headsetId, subscribeStreams, title, description, subjectName, tags, experimentId } = req.body || {};
+      if (!title) return res.status(400).json({ ok: false, error: 'Missing title' });
+      await cortex.ensureReadyForStreams(headsetId);
+      if (Array.isArray(subscribeStreams) && subscribeStreams.length) {
+        await cortex.subscribe(subscribeStreams.map(String));
+      }
+      const result = await cortex.createRecord({ title: String(title), description, subjectName, tags, experimentId });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Stop the current record (by session)
+  app.post('/api/record/stop', apiAuth, limiter, async (_req, res) => {
+    try {
+      const result = await cortex.stopRecord();
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Export a record and return downloadable URLs
+  app.post('/api/record/export', apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const { recordId, exportStreams, format, version, includeMarkerExtraInfos, includeSurvey, includeDemographics, includeDeprecatedPM } = req.body || {};
+      if (!recordId) return res.status(400).json({ ok: false, error: 'Missing recordId' });
+      const streams = Array.isArray(exportStreams) && exportStreams.length ? exportStreams.map(String) : ['EEG'];
+      const fmt = (format || 'CSV').toUpperCase();
+      const ver = version || (fmt === 'CSV' ? 'V2' : undefined);
+
+      // create unique subfolder
+      const safeId = String(recordId).replace(/[^a-zA-Z0-9_-]/g, '');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const subdir = `${safeId || 'record'}_${stamp}`;
+      const folder = path.join(exportsRoot, subdir);
+      try { fs.mkdirSync(folder, { recursive: true }); } catch (_) {}
+
+      const result = await cortex.exportRecordWithRetry({
+        recordIds: [recordId],
+        folder,
+        streamTypes: streams,
+        format: fmt,
+        version: ver,
+        includeMarkerExtraInfos: !!includeMarkerExtraInfos,
+        includeSurvey: !!includeSurvey,
+        includeDemographics: !!includeDemographics,
+        includeDeprecatedPM: !!includeDeprecatedPM,
+      });
+
+      // Collect file list in the subdir
+      let files = [];
+      try {
+        files = fs.readdirSync(folder).map((f) => ({ name: f, url: `/downloads/${subdir}/${encodeURIComponent(f)}` }));
+      } catch (_) {}
+
+      res.json({ ok: true, export: result, folder: `/downloads/${subdir}`, files });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });
     }
