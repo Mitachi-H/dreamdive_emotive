@@ -15,10 +15,12 @@
 ## 使い方 (開発)
 
 前提:
+
 - Node.js >= 18
 - Emotiv App が稼働しており、Cortex API (通常 `wss://localhost:6868`) に接続可能
 
 手順:
+
 1. 依存インストール
    - `cd server && npm install`
 2. 環境変数の設定
@@ -28,7 +30,11 @@
 3. サーバ起動
    - `npm run start` (server ディレクトリ内)
    - もしくは、リポジトリ直下で: `npm --prefix server run start`
-   - ブラウザで `http://localhost:3000` にアクセス
+   - ローカル: `http://localhost:3000` にアクセス
+   - 同一 Wi‑Fi 内の別デバイスから: サーバ PC の IP を使って `http://<サーバIP>:3000`
+     - 例: `http://192.168.128.122:3000`
+     - macOS で IP 確認例: `ipconfig getifaddr en0`
+     - ファイアウォールでポート 3000 の受信を許可してください
    - 認証ページ: `http://localhost:3000/authentication` (Cortex 認証関連の情報を表示)
      - 初回は Emotiv Launcher でアプリ承認が必要です。ページの「アクセス許可を要求」を押し、Launcher で承認してから「再取得」を押してください。
 
@@ -56,4 +62,10 @@
   - `getUserLogin`, `hasAccessRight`, `getUserInformation`, `getLicenseInfo`
   - 事前に Emotiv App でログイン済みであること。
 - `GET /authentication`: 上記 API を呼び出して結果を表示する簡易 UI ページ
- - `POST /api/request-access`: アプリのアクセス許可を要求。Emotiv Launcher で承認操作が必要
+- `POST /api/request-access`: アプリのアクセス許可を要求。Emotiv Launcher で承認操作が必要
+
+## LAN 共有について
+
+- `server/.env` の `HOST=0.0.0.0` により、全インターフェイスで待受します。
+- 起動時に端末の LAN アドレスがログに表示されます。別デバイスはその URL でアクセス可能です。
+- 同一ネットワーク上でアクセスできない場合は、OS のファイアウォールやルーターの AP 分離機能を確認してください。

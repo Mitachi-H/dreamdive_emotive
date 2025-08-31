@@ -1,5 +1,6 @@
 const path = require('path');
 const http = require('http');
+const os = require('os');
 const express = require('express');
 const WebSocket = require('ws');
 
@@ -83,8 +84,19 @@ wss.on('connection', (ws) => {
 });
 
 async function start() {
-  server.listen(config.port, () => {
-    console.log(`Server listening on http://localhost:${config.port}`);
+  server.listen(config.port, config.host, () => {
+    const nets = os.networkInterfaces();
+    const addrs = [];
+    for (const name of Object.keys(nets)) {
+      for (const n of nets[name] || []) {
+        if (n.family === 'IPv4' && !n.internal) addrs.push(n.address);
+      }
+    }
+    console.log(`Server listening on:`);
+    console.log(`  - http://localhost:${config.port}`);
+    if (config.host !== 'localhost') {
+      for (const ip of addrs) console.log(`  - http://${ip}:${config.port}`);
+    }
   });
 
   if (!config.autoConnect) {
