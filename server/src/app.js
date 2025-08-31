@@ -3,6 +3,7 @@ const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const config = require("./config");
+const { apiAuth } = require("./utils/auth");
 
 // Build an Express app with routes wired to a provided Cortex-like client.
 function createApp(cortex) {
@@ -11,16 +12,6 @@ function createApp(cortex) {
   // Security headers (keep CSP off to not break local scripts/styles)
   app.disable("x-powered-by");
   app.use(helmet({ contentSecurityPolicy: false }));
-
-  // Optional API token guard
-  const apiAuth = (req, res, next) => {
-    const token = config.apiToken;
-    if (!token) return next();
-    const auth = req.get("authorization") || "";
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (m && m[1] === token) return next();
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  };
 
   // Basic rate limit for API endpoints
   const limiter = rateLimit({ windowMs: 60_000, max: 120 });
@@ -77,7 +68,6 @@ function createApp(cortex) {
 
   // Serve the Authentication page at /authentication
   app.get("/authentication", (_req, res) => {
-    const webDir = path.join(__dirname, "..", "..", "web");
     res.sendFile(path.join(webDir, "authentication.html"));
   });
 
@@ -129,13 +119,11 @@ function createApp(cortex) {
 
   // Headset page
   app.get('/headset', (_req, res) => {
-    const webDir = path.join(__dirname, '..', '..', 'web');
     res.sendFile(path.join(webDir, 'headset.html'));
   });
 
   // Pow page
   app.get('/pow', (_req, res) => {
-    const webDir = path.join(__dirname, '..', '..', 'web');
     res.sendFile(path.join(webDir, 'pow.html'));
   });
 

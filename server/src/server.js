@@ -6,6 +6,7 @@ const WebSocket = require("ws");
 const config = require("./config");
 const CortexClient = require("./cortexClient");
 const { createApp } = require("./app");
+const { isTokenValid } = require("./utils/auth");
 const cortex = new CortexClient(config.cortex);
 const app = createApp(cortex);
 const server = http.createServer(app);
@@ -31,12 +32,12 @@ wss.on("connection", (ws, req) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const provided = url.searchParams.get("token");
-    if (config.apiToken && provided !== config.apiToken) {
+    if (!isTokenValid(provided)) {
       ws.close(1008, "Unauthorized");
       return;
     }
   } catch (_) {
-    if (config.apiToken) {
+    if (!isTokenValid(undefined)) {
       try { ws.close(1008, "Unauthorized"); } catch (_) {}
       return;
     }
