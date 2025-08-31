@@ -19,3 +19,18 @@ header { padding: 16px; border-bottom: 1px solid #ccc3; }
 main { padding: 16px; }
 .muted { color: var(--muted); font-size: 0.9em; }
 .log { height: 50vh; overflow: auto; background: #0008; color: #0f0; padding: 12px; border-radius: 6px; }
+
+/* pow grid styles */
+.pow-wrap { margin-top: 12px; }
+.pow-grid { display: grid; gap: 4px; align-items: center; }
+.pow-grid { grid-auto-rows: 32px; }
+.pow-grid { grid-template-columns: max-content repeat(var(--band-count, 5), 1fr); }
+.pow-cell, .pow-head, .pow-sensor { border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.pow-head { background: #8882; color: var(--fg); font-weight: 600; text-align: center; }
+.pow-sensor { background: #8881; color: var(--fg); font-weight: 600; white-space: nowrap; }
+.pow-cell { color: #000; text-align: right; }
+.legend { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; color: var(--muted); }
+.legend-bar { height: 10px; width: 160px; background: linear-gradient(90deg, #eef 0%, #9ec5fe 50%, #1d4ed8 100%); border-radius: 999px; }
+.small { font-size: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hidden { display: none !important; }

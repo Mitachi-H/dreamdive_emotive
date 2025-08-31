@@ -18,11 +18,28 @@
           <button id="saveHeadset">Save ID</button>
           <button id="start">Start pow</button>
           <button id="stop">Stop pow</button>
+          <label class="small" style="margin-left:8px;">
+            <input type="checkbox" id="toggleRaw" /> RAW 表示
+          </label>
         </div>
-        <p class="muted">配列の順序はヘッドセットのチャンネル構成に依存します。Insight の一例: ['AF3/theta','AF3/alpha','AF3/betaL','AF3/betaH','AF3/gamma', 'T7/theta', ... , 'AF4/gamma']</p>
-        <div>最新時刻: <span id="powTime">-</span></div>
-        <div>要素数: <span id="powLen">-</span></div>
-        <pre id="pow" class="log"></pre>
+        <div class="row small">
+          <div>最新時刻: <span id="powTime">-</span></div>
+          <div>要素数: <span id="powLen">-</span></div>
+          <div>sid: <span id="powSid">-</span></div>
+        </div>
+
+        <div class="pow-wrap">
+          <div class="legend">
+            <span>強度</span>
+            <div class="legend-bar"></div>
+            <span>低 → 高</span>
+          </div>
+          <div id="grid" class="pow-grid" style="--band-count:5"></div>
+        </div>
+
+        <p class="muted small">配列の順序はヘッドセットのチャンネル構成に依存します。Insight の一例: ['AF3/theta','AF3/alpha','AF3/betaL','AF3/betaH','AF3/gamma', 'T7/theta', ... , 'AF4/gamma']</p>
+
+        <pre id="pow" class="log hidden"></pre>
       </section>
     </main>
     <script src="/pow.js"></script>

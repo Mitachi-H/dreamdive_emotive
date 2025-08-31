@@ -26,6 +26,8 @@ cortex.on("log", (m) => console.log("[cortex]", m));
 cortex.on("error", (e) => console.error("[cortex:error]", e.message || e));
 cortex.on("eeg", (payload) => broadcast({ type: "eeg", payload }));
 cortex.on("pow", (payload) => broadcast({ type: "pow", payload }));
+// Also broadcast labels for subscribed streams so the UI can render nicely
+cortex.on("new_data_labels", (payload) => broadcast({ type: "labels", payload }));
 
 // Client connections (optional token check via ?token=)
 wss.on("connection", (ws, req) => {
