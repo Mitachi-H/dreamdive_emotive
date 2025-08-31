@@ -66,3 +66,8 @@
   - デバイス情報ストリーム dev を可視化（Battery / Signal / 各 EEG センサーの接触品質 CQ と OVERALL）。
   - Start/Stop で `POST /api/stream/dev/start|stop` を呼び、WebSocket で `labels`（センサー配列）と `dev` を受信。
   - dev の配列は `[Battery(0-4), Signal(0-1), [CQ..., OVERALL(0-100)], BatteryPercent(0-100)]` の構成です。
+
+- `EEG_Quality.html` + `EEG_Quality.js`
+  - EEG 品質ストリーム eq を可視化（batteryPercent / overall / sampleRateQuality と各センサー 0–4）。
+  - Start/Stop で `POST /api/stream/eq/start|stop` を呼び、WebSocket で `labels`（センサー配列）と `eq` を受信。
+  - eq の配列は `[batteryPercent(0-100), overall(0-100), sampleRateQuality(0..1 or -1), ...sensors(0-4)]` の構成です。

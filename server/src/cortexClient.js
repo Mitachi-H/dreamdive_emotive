@@ -411,7 +411,8 @@ class CortexClient extends EventEmitter {
   _extractLabels(streamName, cols) {
     if (!Array.isArray(cols)) return [];
     if (streamName === 'eeg') return cols.slice(0, -1); // drop MARKERS
-    if (streamName === 'dev') return Array.isArray(cols[2]) ? cols[2] : cols; // CQ header
+    if (streamName === 'dev') return Array.isArray(cols[2]) ? cols[2] : cols; // CQ header (sensors only)
+    if (streamName === 'eq') return cols.slice(3); // sensors only after the first 3 fields
     return cols;
   }
 
@@ -448,6 +449,11 @@ class CortexClient extends EventEmitter {
     if (msg.pow) {
       this.emit('new_pow_data', { pow: msg.pow, time: t });
       this.emit('pow', msg); // keep compatibility with current server broadcast
+      return;
+    }
+    if (msg.eq) {
+      // eq layout: [batteryPercent, overall, sampleRateQuality, ...sensorQualities]
+      this.emit('eq', msg);
       return;
     }
     if (msg.sys) {

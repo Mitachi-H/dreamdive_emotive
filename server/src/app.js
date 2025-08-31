@@ -138,6 +138,11 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'device_information.html'));
   });
 
+  // EEG Quality page
+  app.get('/EEG_Quality', (_req, res) => {
+    res.sendFile(path.join(webDir, 'EEG_Quality.html'));
+  });
+
   // Stream control: start/stop pow subscription
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {
     try {
@@ -195,6 +200,27 @@ function createApp(cortex) {
   app.post("/api/stream/dev/stop", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.unsubscribe(["dev"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  // Stream control: start/stop eq (EEG quality) subscription
+  app.post("/api/stream/eq/start", apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const headsetId = req.body && req.body.headsetId ? String(req.body.headsetId) : undefined;
+      await cortex.ensureReadyForStreams(headsetId);
+      await cortex.subscribe(["eq"]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/stream/eq/stop", apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.unsubscribe(["eq"]);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message || String(err) });
