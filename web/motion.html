@@ -42,6 +42,20 @@
           <button id="calibrate">Calibrate (set current as 0)</button>
           <button id="resetCalib">Reset</button>
           <label class="small"><input type="checkbox" id="mirror" checked /> Mirror</label>
+          <label class="small">Scale:
+            <select id="scaleMode">
+              <option value="unit">Unit</option>
+              <option value="auto" selected>Auto</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label class="small">ACC gain
+            <input id="gainAcc" type="range" min="0.01" max="2" step="0.01" value="1" />
+          </label>
+          <label class="small">MAG gain
+            <input id="gainMag" type="range" min="0.001" max="0.1" step="0.001" value="0.02" />
+          </label>
+          <div class="small">| |ACC|: <span id="accLen">-</span> |MAG|: <span id="magLen">-</span></div>
           <div class="small">
             yaw(Y): <span id="yaw">-</span>° /
             pitch(X): <span id="pitch">-</span>° /
@@ -52,10 +66,18 @@
           <canvas id="viz3d" width="380" height="380" style="background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset"></canvas>
           <div class="small muted" style="max-width: 420px">
             <p>矢印はヘッドセットの前方方向（+Z）を示します。Calibrate で現在の向きを 0（正面）に補正します。Mirror を外すと左右を反転しません。</p>
-            <p style="margin-top:8px">
-              可視化: <span style="color:#888">灰</span>=向き（+Z）、<span style="color:#22c55e">緑</span>=加速度ACC、<span style="color:#a855f7">紫</span>=磁気MAG、
-              軸: <span style="color:#e11">X</span>/<span style="color:#1b1">Y</span>/<span style="color:#17f">Z</span>
-            </p>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px">
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:#6b7280; border-radius:2px"></span>Forward</span>
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:#16a34a; border-radius:2px"></span>ACC</span>
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:#7c3aed; border-radius:2px"></span>MAG</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:rgba(239,68,68,0.5); border-radius:2px"></span>X axis</span>
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:rgba(14,165,233,0.5); border-radius:2px"></span>Y axis</span>
+                <span style="display:inline-flex; align-items:center; gap:6px"><span style="display:inline-block; width:14px; height:10px; background:rgba(99,102,241,0.5); border-radius:2px"></span>Z axis</span>
+              </div>
+            </div>
           </div>
         </div>
 
