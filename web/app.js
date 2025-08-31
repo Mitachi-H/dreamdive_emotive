@@ -8,7 +8,9 @@
   };
 
   function connect() {
-    const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+    const token = localStorage.getItem('dashboard_token');
+    const q = token ? `?token=${encodeURIComponent(token)}` : '';
+    const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws${q}`;
     const ws = new WebSocket(wsUrl);
 
     ws.addEventListener('open', () => {

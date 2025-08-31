@@ -25,8 +25,21 @@ cortex.on("log", (m) => console.log("[cortex]", m));
 cortex.on("error", (e) => console.error("[cortex:error]", e.message || e));
 cortex.on("eeg", (payload) => broadcast({ type: "eeg", payload }));
 
-// Client connections
-wss.on("connection", (ws) => {
+// Client connections (optional token check via ?token=)
+wss.on("connection", (ws, req) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const provided = url.searchParams.get("token");
+    if (config.apiToken && provided !== config.apiToken) {
+      ws.close(1008, "Unauthorized");
+      return;
+    }
+  } catch (_) {
+    if (config.apiToken) {
+      try { ws.close(1008, "Unauthorized"); } catch (_) {}
+      return;
+    }
+  }
   ws.send(
     JSON.stringify({ type: "hello", message: "Connected to dashboard stream" })
   );

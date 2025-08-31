@@ -1,9 +1,29 @@
 const path = require("path");
 const express = require("express");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const config = require("./config");
 
 // Build an Express app with routes wired to a provided Cortex-like client.
 function createApp(cortex) {
   const app = express();
+
+  // Security headers (keep CSP off to not break local scripts/styles)
+  app.disable("x-powered-by");
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // Optional API token guard
+  const apiAuth = (req, res, next) => {
+    const token = config.apiToken;
+    if (!token) return next();
+    const auth = req.get("authorization") || "";
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    if (m && m[1] === token) return next();
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  };
+
+  // Basic rate limit for API endpoints
+  const limiter = rateLimit({ windowMs: 60_000, max: 120 });
 
   // Serve static dashboard
   const webDir = path.join(__dirname, "..", "..", "web");
@@ -13,7 +33,7 @@ function createApp(cortex) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
   // Authentication info API (aggregates Cortex auth endpoints)
-  app.get("/api/authentication", async (_req, res) => {
+  app.get("/api/authentication", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.connect();
       const userLogin = await cortex
@@ -62,7 +82,7 @@ function createApp(cortex) {
   });
 
   // Request access flow: user must approve in Emotiv Launcher
-  app.post("/api/request-access", async (_req, res) => {
+  app.post("/api/request-access", apiAuth, limiter, async (_req, res) => {
     try {
       await cortex.connect();
       const result = await cortex.requestAccess();

@@ -13,11 +13,18 @@
     el.textContent = JSON.stringify(data, null, 2);
   }
 
+  const getHeaders = () => {
+    const h = {};
+    const t = localStorage.getItem('dashboard_token');
+    if (t) h['Authorization'] = `Bearer ${t}`;
+    return h;
+  };
+
   async function load() {
     status.textContent = '取得中…';
     errorBox.textContent = '';
     try {
-      const res = await fetch('/api/authentication');
+      const res = await fetch('/api/authentication', { headers: getHeaders() });
       const json = await res.json();
       status.textContent = json.ok ? '取得完了' : 'エラー';
       if (!json.ok && json.error) errorBox.textContent = json.error;
@@ -37,7 +44,7 @@
     status.textContent = 'requestAccess 実行中… Emotiv Launcher で承認してください。';
     errorBox.textContent = '';
     try {
-      const res = await fetch('/api/request-access', { method: 'POST' });
+      const res = await fetch('/api/request-access', { method: 'POST', headers: getHeaders() });
       const json = await res.json();
       if (json.ok) {
         status.textContent = 'requestAccess を送信しました。Launcher で承認後に再取得してください。';

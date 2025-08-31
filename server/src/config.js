@@ -12,6 +12,7 @@ const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
   host: process.env.HOST || '0.0.0.0',
+  apiToken: process.env.API_AUTH_TOKEN || '',
   autoConnect: String(process.env.AUTO_CONNECT || 'false').toLowerCase() === 'true',
   cortex: {
     url: process.env.CORTEX_URL || 'wss://localhost:6868',
