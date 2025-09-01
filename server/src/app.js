@@ -210,6 +210,24 @@ function createApp(cortex) {
     res.sendFile(path.join(webDir, 'Facial_expression.html'));
   });
 
+  // Facial expression detection info (list available actions, etc.)
+  app.get('/api/fac/info', apiAuth, limiter, async (_req, res) => {
+    try {
+      await cortex.connect();
+      let result;
+      try {
+        result = await cortex.getDetectionInfo('facialExpression');
+      } catch (e) {
+        // Some deployments might require auth; try authorize once
+        try { await cortex.authorize(); } catch (_) {}
+        result = await cortex.getDetectionInfo('facialExpression');
+      }
+      res.json({ ok: true, result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
   // Records page
   app.get('/Records', (_req, res) => {
     res.sendFile(path.join(webDir, 'Records.html'));
@@ -412,12 +430,26 @@ function createApp(cortex) {
       const mapFacAction = (s) => {
         const x = String(s || '').toLowerCase();
         if (x === 'blink') return 'blink';
-        if (x === 'winkl' || x === 'wink_left' || x === 'winkleft') return 'winkLeft';
-        if (x === 'winkr' || x === 'wink_right' || x === 'winkright') return 'winkRight';
+        // Wink is a single threshold controlling both L/R
+        if (x === 'wink' || x === 'winkl' || x === 'wink_left' || x === 'winkleft' || x === 'winkr' || x === 'wink_right' || x === 'winkright') return 'wink';
+        // Horizontal eye movement: lookL/lookR share 'horiEye'
         if (x === 'lookl' || x === 'lookleft' || x === 'lookr' || x === 'lookright' || x === 'horieye' || x === 'hori_eye' || x === 'hori') return 'horiEye';
+        // Upper face
+        if (x === 'surprise') return 'surprise';
+        if (x === 'frown') return 'frown';
+        // Lower face
+        if (x === 'smile') return 'smile';
+        if (x === 'clench') return 'clench';
+        if (x === 'laugh') return 'laugh';
+        // Smirk may be side-specific; allow either
+        if (x === 'smirk') return 'smirk';
+        if (x === 'smirkleft' || x === 'smirk_left') return 'smirkLeft';
+        if (x === 'smirkright' || x === 'smirk_right') return 'smirkRight';
+        // Handle exact camelCase tokens
         if (s === 'winkL' || s === 'winkR' || s === 'lookL' || s === 'lookR') return mapFacAction(s.toLowerCase());
-        // passthrough for already canonical like 'winkLeft', 'winkRight', 'horiEye'
-        if (s === 'winkLeft' || s === 'winkRight' || s === 'horiEye') return s;
+        if (s === 'wink' || s === 'horiEye') return s;
+        if (s === 'surprise' || s === 'frown' || s === 'smile' || s === 'clench' || s === 'laugh') return s;
+        if (s === 'smirkLeft' || s === 'smirkRight' || s === 'smirk') return s;
         return null;
       };
       const actionCanon = mapFacAction(action);

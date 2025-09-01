@@ -199,6 +199,11 @@ class CortexClient extends EventEmitter {
     return this._rpc('getCortexInfo', {});
   }
 
+  // ----- Detection info -----
+  async getDetectionInfo(detection /* 'mentalCommand' | 'facialExpression' */) {
+    return this._rpc('getDetectionInfo', { detection });
+  }
+
   // ----- Headset control -----
   async refreshHeadsetList() {
     return this._rpc('controlDevice', { command: 'refresh' });

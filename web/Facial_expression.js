@@ -25,9 +25,11 @@
   const thGetBtn = document.getElementById('thGet');
   const thSetBtn = document.getElementById('thSet');
   const thRefreshBtn = document.getElementById('thRefresh');
+  const thLoadActionsBtn = document.getElementById('thLoadActions');
   const thStatus = document.getElementById('thStatus');
   const thProfileInput = document.getElementById('thProfile');
   const thList = document.getElementById('thList');
+  const feActionsEl = document.getElementById('feActions');
 
   const getHeaders = () => { const h = {}; const t = localStorage.getItem('dashboard_token'); if (t) h['Authorization'] = `Bearer ${t}`; return h; };
 
@@ -282,17 +284,18 @@
   thValueInput?.addEventListener('input', () => { syncSliderFromInput(); });
   thSlider?.addEventListener('input', () => { syncInputFromSlider(); });
 
+  // Detection info and threshold targets (derived)
+  let feInfo = null; // { actions: [], ... }
+  let thTargets = []; // [{ token, label, aliases: [] }]
+
   function renderThresholdList(map) {
     if (!thList) return;
     thList.innerHTML = '';
-    const view = [
-      ['neutral', null],
-      ['blink', map?.blink],
-      ['winkL', map?.winkLeft],
-      ['winkR', map?.winkRight],
-      ['lookL', map?.horiEye],
-      ['lookR', map?.horiEye],
-    ];
+    const view = Array.isArray(thTargets) && thTargets.length
+      ? thTargets
+          .map(t => [t.label || t.token, map ? map[t.token] : null])
+          .filter(([, v]) => v != null && Number.isFinite(Number(v)))
+      : [];
     for (const [label, v] of view) {
       const pill = document.createElement('span');
       pill.style.display = 'inline-flex';
@@ -313,15 +316,102 @@
     }
   }
 
+  function renderFeActions(actions) {
+    if (!feActionsEl) return;
+    feActionsEl.innerHTML = '';
+    const list = Array.isArray(actions) ? actions : [];
+    for (const a of list) {
+      const pill = document.createElement('span');
+      pill.style.display = 'inline-flex';
+      pill.style.alignItems = 'center';
+      pill.style.padding = '3px 8px';
+      pill.style.borderRadius = '999px';
+      pill.style.background = '#0001';
+      const name = document.createElement('span');
+      name.textContent = a;
+      name.className = 'small';
+      pill.appendChild(name);
+      feActionsEl.appendChild(pill);
+    }
+  }
+
+  function setActionOptions(targets) {
+    if (!thActionSel) return;
+    // Clear
+    while (thActionSel.firstChild) thActionSel.removeChild(thActionSel.firstChild);
+    for (const t of targets) {
+      const opt = document.createElement('option');
+      opt.value = t.token;
+      opt.textContent = t.label || t.token;
+      thActionSel.appendChild(opt);
+    }
+  }
+
+  function deriveTargetsFromActions(actions) {
+    const acts = new Set(Array.isArray(actions) ? actions : []);
+    const out = [];
+    // Eye
+    if (acts.has('blink')) out.push({ token: 'blink', label: 'blink', aliases: ['blink'] });
+    if (acts.has('winkL') || acts.has('winkR')) {
+      const aliases = ['winkL', 'winkR'].filter(a => acts.has(a));
+      out.push({ token: 'wink', label: 'wink (L/R)', aliases });
+    }
+    if (acts.has('horiEye') || acts.has('lookL') || acts.has('lookR')) {
+      const aliases = ['lookL', 'lookR', 'horiEye'].filter(a => acts.has(a));
+      out.push({ token: 'horiEye', label: 'horiEye (look L/R)', aliases });
+    }
+    // Upper face
+    if (acts.has('surprise')) out.push({ token: 'surprise', label: 'surprise', aliases: ['surprise'] });
+    if (acts.has('frown')) out.push({ token: 'frown', label: 'frown', aliases: ['frown'] });
+    // Lower face
+    if (acts.has('smile')) out.push({ token: 'smile', label: 'smile', aliases: ['smile'] });
+    if (acts.has('clench')) out.push({ token: 'clench', label: 'clench', aliases: ['clench'] });
+    if (acts.has('laugh')) out.push({ token: 'laugh', label: 'laugh', aliases: ['laugh'] });
+    if (acts.has('smirkLeft') || acts.has('smirkRight')) {
+      out.push({ token: 'smirk', label: 'smirk (L/R?)', aliases: ['smirkLeft', 'smirkRight'].filter(a => acts.has(a)) });
+    }
+    if (acts.has('smirkLeft')) out.push({ token: 'smirkLeft', label: 'smirkLeft', aliases: ['smirkLeft'] });
+    if (acts.has('smirkRight')) out.push({ token: 'smirkRight', label: 'smirkRight', aliases: ['smirkRight'] });
+    return out;
+  }
+
+  async function loadFacDetectionInfo() {
+    try {
+      setThStatus('Loading actions...');
+      const res = await fetch('/api/fac/info', { headers: getHeaders() });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || 'failed to load detection info');
+      feInfo = j.result || {};
+      renderFeActions(feInfo.actions || []);
+      thTargets = deriveTargetsFromActions(feInfo.actions || []);
+      if (thTargets && thTargets.length) setActionOptions(thTargets);
+      setThStatus('Actions loaded');
+    } catch (e) {
+      setThStatus('Load actions error: ' + String(e.message || e));
+    }
+  }
+
   async function refreshAllThresholds() {
     try {
       setThStatus('Refreshing...');
-      const acts = ['blink', 'winkLeft', 'winkRight', 'horiEye'];
-      const results = await Promise.all(acts.map(async (a) => {
+      // Build target tokens from detection info if available; else fallback to known tokens
+      const targets = (thTargets && thTargets.length)
+        ? thTargets.map(t => t.token)
+        : ['blink', 'wink', 'horiEye', 'surprise', 'frown', 'smile', 'clench', 'laugh', 'smirkLeft', 'smirkRight'];
+      const uniq = Array.from(new Set(targets));
+      const results = await Promise.all(uniq.map(async (a) => {
         try { const v = await apiFacThreshold({ status: 'get', action: a }); return [a, v]; }
         catch (_) { return [a, null]; }
       }));
       const map = Object.fromEntries(results);
+      // Update action select to only include tokens confirmed as gettable
+      try {
+        const okTokens = new Set(Object.entries(map)
+          .filter(([, v]) => v != null && Number.isFinite(Number(v)))
+          .map(([k]) => k));
+        const filtered = Array.isArray(thTargets) ? thTargets.filter(t => okTokens.has(t.token)) : [];
+        if (filtered.length) setActionOptions(filtered);
+      } catch (_) {}
       renderThresholdList(map);
       setThStatus('OK');
     } catch (e) {
@@ -332,11 +422,19 @@
   function toThresholdToken(action) {
     const x = String(action || '').toLowerCase();
     if (x === 'blink') return 'blink';
-    if (x === 'winkl' || x === 'wink_left' || x === 'winkleft') return 'winkLeft';
-    if (x === 'winkr' || x === 'wink_right' || x === 'winkright') return 'winkRight';
+    if (x === 'winkl' || x === 'wink_left' || x === 'winkleft' || x === 'wink' || x === 'winkr' || x === 'wink_right' || x === 'winkright') return 'wink';
     if (x === 'lookl' || x === 'lookleft' || x === 'lookr' || x === 'lookright' || x === 'horieye' || x === 'hori_eye' || x === 'hori') return 'horiEye';
+    if (x === 'surprise') return 'surprise';
+    if (x === 'frown') return 'frown';
+    if (x === 'smile') return 'smile';
+    if (x === 'clench') return 'clench';
+    if (x === 'laugh') return 'laugh';
+    if (x === 'smirk') return 'smirk';
+    if (x === 'smirkleft' || x === 'smirk_left') return 'smirkLeft';
+    if (x === 'smirkright' || x === 'smirk_right') return 'smirkRight';
     if (action === 'winkL' || action === 'winkR' || action === 'lookL' || action === 'lookR') return toThresholdToken(action.toLowerCase());
     if (action === 'winkLeft' || action === 'winkRight' || action === 'horiEye') return action;
+    if (action === 'surprise' || action === 'frown' || action === 'smile' || action === 'clench' || action === 'laugh' || action === 'smirkLeft' || action === 'smirkRight' || action === 'smirk') return action;
     return null;
   }
 
@@ -376,8 +474,13 @@
 
   thRefreshBtn?.addEventListener('click', async () => { await refreshAllThresholds(); });
 
+  thLoadActionsBtn?.addEventListener('click', async () => { await loadFacDetectionInfo(); });
+
   // Initial threshold fetch to show values always
-  refreshAllThresholds();
+  (async () => {
+    await loadFacDetectionInfo().catch(() => {});
+    await refreshAllThresholds();
+  })();
 
   connect();
 })();
