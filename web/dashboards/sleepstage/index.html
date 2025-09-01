@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sleep Stage Analysis</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      .status { font-weight: bold; font-size: 1.2rem; }
+      .stage-card { 
+        border: 2px solid #ddd; 
+        border-radius: 12px; 
+        padding: 16px; 
+        background: #fff; 
+        text-align: center;
+        min-width: 120px;
+      }
+      .stage-wake { border-color: #ef4444; background: #fef2f2; }
+      .stage-light { border-color: #22c55e; background: #f0fdf4; }
+      .stage-rem { border-color: #06b6d4; background: #f0fdfa; }
+      .stage-deep { border-color: #3b82f6; background: #eff6ff; }
+      .stage-unknown { border-color: #9ca3af; background: #f9fafb; }
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin: 16px 0;
+      }
+      .metric-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px;
+        background: #fff;
+      }
+      .metric-title { font-size: 0.9rem; color: #666; margin-bottom: 4px; }
+      .metric-value { font-size: 1.4rem; font-weight: bold; }
+      .sleep-timeline {
+        margin-top: 16px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+      }
+      .timeline-header {
+        background: #f9fafb;
+        padding: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        font-weight: 600;
+      }
+      .timeline-content {
+        height: 120px;
+        position: relative;
+        overflow: hidden;
+      }
+      .stage-bar {
+        position: absolute;
+        top: 0;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sleep Stage Analysis</h1>
+      <p class="muted">高度な睡眠ステージ分析とリアルタイム監視</p>
+    </header>
+    <main>
+      <section class="row">
+        <button id="start">Start Analysis</button>
+        <button id="stop">Stop Analysis</button>
+        <span id="wsstatus" class="muted">WS: connecting…</span>
+      </section>
+
+      <section>
+        <h3>Current Sleep Stage</h3>
+        <div class="row">
+          <div id="currentStage" class="stage-card stage-unknown">
+            <div class="status">Unknown</div>
+            <div id="confidence" class="muted">-</div>
+            <div id="duration" class="muted">Duration: 0s</div>
+          </div>
+          <div>
+            <div id="quality" class="muted"></div>
+            <div id="timestamp" class="muted"></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Sleep Metrics</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-title">Theta/Alpha Ratio</div>
+            <div id="thetaAlphaRatio" class="metric-value">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Beta Relative Power</div>
+            <div id="betaRel" class="metric-value">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Motion Level</div>
+            <div id="motionLevel" class="metric-value">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Signal Quality</div>
+            <div id="signalQuality" class="metric-value">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Total Sleep Time</div>
+            <div id="totalSleepTime" class="metric-value">0m</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">Sleep Efficiency</div>
+            <div id="sleepEfficiency" class="metric-value">-%</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Sleep Timeline</h3>
+        <div class="sleep-timeline">
+          <div class="timeline-header">
+            <span>Past 60 minutes</span>
+            <span id="timelineRange" class="muted" style="float: right;"></span>
+          </div>
+          <div id="timeline" class="timeline-content"></div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Detailed Chart</h3>
+        <div class="muted small">リアルタイムの睡眠指標とステージ推移</div>
+        <canvas id="chart" width="900" height="300" style="max-width:100%; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset;"></canvas>
+        <div class="row small muted" style="margin-top:6px; gap:16px; align-items:center;">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta_rel</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#d97706;border-radius:2px;margin-right:6px;"></span>motion</span>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
