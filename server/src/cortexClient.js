@@ -199,6 +199,11 @@ class CortexClient extends EventEmitter {
     return this._rpc('getCortexInfo', {});
   }
 
+  // ----- Detection info -----
+  async getDetectionInfo(detection /* 'mentalCommand' | 'facialExpression' */) {
+    return this._rpc('getDetectionInfo', { detection });
+  }
+
   // ----- Headset control -----
   async refreshHeadsetList() {
     return this._rpc('controlDevice', { command: 'refresh' });
@@ -428,6 +433,24 @@ class CortexClient extends EventEmitter {
       for (const s of result.failure) this.emit('log', `The data stream ${s.streamName} is unsubscribed unsuccessfully. Because: ${s.message}`);
     }
     return result;
+  }
+
+  // ----- Facial Expression Threshold -----
+  // Wrapper for Cortex `facialExpressionThreshold` JSON-RPC
+  // params: { status: 'get'|'set', action: string, value?: number, profile?: string, session?: string }
+  async facialExpressionThreshold({ status, action, value, profile, session } = {}) {
+    if (!this.authToken) await this.authorize();
+    const params = {
+      cortexToken: this.authToken,
+      status,
+      action,
+    };
+    if (typeof value === 'number' && status === 'set') params.value = value;
+    // Prefer explicit session/profile, else use current session/profile
+    if (session) params.session = session; else if (this.sessionId) params.session = this.sessionId;
+    if (profile) params.profile = profile; else if (this.profile) params.profile = this.profile;
+    if (!params.session && !params.profile) throw new Error('Missing session or profile');
+    return this._rpc('facialExpressionThreshold', params);
   }
 
   // ----- Profiles (minimal parity) -----
