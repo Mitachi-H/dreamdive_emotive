@@ -21,3 +21,5 @@ server/.env
 # Editor
 .vscode/
 .idea/
+
+.venv/

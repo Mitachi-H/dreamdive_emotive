@@ -12,6 +12,20 @@
 
 公開リポジトリのため、認証情報や個人データはコミットしない方針です。実値は `.env` に配置し、`.gitignore` で除外しています。
 
+## クイックセットアップ
+
+まとめて環境構築（Node 依存のインストール、`server/.env` の作成、Python venv 作成 + 依存インストール）を行うスクリプトを用意しました。
+
+```
+bash scripts/setup.sh
+```
+
+実行後の起動方法:
+- サーバ: `cd server && npm start` → `http://localhost:3000`
+- Python ダッシュボード: `source .venv/bin/activate`（Windows: `.venv\Scripts\activate`）→ `streamlit run python/sleep_dashboard/app.py`
+
+`server/.env` に `API_AUTH_TOKEN` を設定した場合、Streamlit 側のサイドバーに同じトークンを入力してください。
+
 ## 使い方 (開発)
 
 前提:
