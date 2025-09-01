@@ -133,7 +133,17 @@ function computeMotionRmsAt(tCenter) {
     Math.abs(s.t - tCenter) <= halfWin && isFinite(s.accMag)
   );
   
-  if (relevant.length < 5) return NaN;
+  console.log('[sleepstage] computeMotionRmsAt:', { 
+    tCenter, 
+    totalBufferSize: buffers.mot.length, 
+    relevantSize: relevant.length,
+    recentSamples: buffers.mot.slice(-5).map(s => ({ t: s.t, accMag: s.accMag }))
+  });
+  
+  if (relevant.length < 5) {
+    console.log('[sleepstage] computeMotionRmsAt: insufficient data, returning NaN');
+    return NaN;
+  }
   
   const mags = relevant.map(s => s.accMag);
   const baseline = median(mags);
@@ -142,7 +152,11 @@ function computeMotionRmsAt(tCenter) {
   
   // Relative to recent peak
   const recentPeak = Math.max(...mags.slice(-10));
-  return recentPeak > 0 ? rms / recentPeak : rms;
+  const result = recentPeak > 0 ? rms / recentPeak : rms;
+  
+  console.log('[sleepstage] computeMotionRmsAt result:', { baseline, rms, recentPeak, result });
+  
+  return result;
 }
 
 function computeWindowFeatures(now) {
@@ -526,6 +540,7 @@ function tick() {
       thetaAlphaRatioEl.textContent = isFinite(features.ratioTA) ? features.ratioTA.toFixed(2) : '-';
       betaRelEl.textContent = isFinite(features.betaRel) ? features.betaRel.toFixed(2) : '-';
       motionLevelEl.textContent = isFinite(features.motionRel) ? features.motionRel.toFixed(2) : '-';
+      console.log('[sleepstage] tick: motion level updated:', features.motionRel);
       signalQualityEl.textContent = isFinite(features.devSig) ? `${(features.devSig * 100).toFixed(0)}%` : '-';
       
       // Add eye movement rate display if available
@@ -576,12 +591,15 @@ const ws = wsConnect({
     labels: (payload) => {
       if (payload.streamName === 'pow' && Array.isArray(payload.labels)) {
         powLabels = payload.labels;
+        console.log('[sleepstage] pow labels received:', powLabels);
       }
       if (payload.streamName === 'mot' && Array.isArray(payload.labels)) {
         motLabels = payload.labels;
+        console.log('[sleepstage] mot labels received:', motLabels);
       }
       if (payload.streamName === 'dev' && Array.isArray(payload.labels)) {
         devLabels = payload.labels;
+        console.log('[sleepstage] dev labels received:', devLabels);
       }
     },
     pow: (payload) => {
@@ -596,21 +614,33 @@ const ws = wsConnect({
     },
     mot: (payload) => {
       const arr = payload?.mot || [];
-      if (!arr.length || !motLabels.length) return;
+      console.log('[sleepstage] mot payload received:', { arr, motLabels, payloadLength: arr.length, labelsLength: motLabels.length });
+      
+      if (!arr.length || !motLabels.length) {
+        console.log('[sleepstage] mot: skipping - no data or labels');
+        return;
+      }
       
       const t = payload.time || nowSec();
       const idxX = motLabels.indexOf('ACCX');
       const idxY = motLabels.indexOf('ACCY');
       const idxZ = motLabels.indexOf('ACCZ');
       
+      console.log('[sleepstage] mot indices:', { idxX, idxY, idxZ });
+      
       const ax = Number(arr[idxX]);
       const ay = Number(arr[idxY]);
       const az = Number(arr[idxZ]);
+      
+      console.log('[sleepstage] mot values:', { ax, ay, az });
       
       if ([ax, ay, az].every(v => typeof v === 'number' && isFinite(v))) {
         const accMag = Math.hypot(ax, ay, az);
         buffers.mot.push({ t, accMag });
         pruneBuffer(buffers.mot, nowSec() - CHART_WINDOW_SEC);
+        console.log('[sleepstage] mot: added to buffer, accMag:', accMag, 'buffer size:', buffers.mot.length);
+      } else {
+        console.log('[sleepstage] mot: invalid values, skipping');
       }
     },
     dev: (payload) => {
