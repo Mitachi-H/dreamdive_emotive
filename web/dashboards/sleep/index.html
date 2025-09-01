@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sleep Detection</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+      .status { font-weight:bold; font-size:1.2rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sleep Detection</h1>
+      <p class="muted">Band power を使って睡眠状態を判定します。</p>
+    </header>
+    <main>
+      <section class="row">
+        <button id="start">Start</button>
+        <button id="stop">Stop</button>
+        <span id="wsstatus" class="muted">WS: connecting…</span>
+      </section>
+      <section>
+        <h3>Current State</h3>
+        <div id="state" class="status">-</div>
+        <div id="ratio" class="muted"></div>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
