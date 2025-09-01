@@ -23,8 +23,22 @@
       </section>
       <section>
         <h3>Current State</h3>
-        <div id="state" class="status">-</div>
+        <div class="row">
+          <div id="state" class="status">-</div>
+          <div id="confidence" class="muted"></div>
+          <div id="quality" class="muted"></div>
+        </div>
         <div id="ratio" class="muted"></div>
+      </section>
+      <section>
+        <h3>Realtime Metrics</h3>
+        <div class="muted small">左Y: theta/alpha (0–3)、右Y: beta_rel・motion (0–1)。下段はステージの推移。</div>
+        <canvas id="chart" width="900" height="260" style="max-width:100%; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset;"></canvas>
+        <div class="row small muted" style="margin-top:6px; gap:16px; align-items:center;">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta_rel</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#d97706;border-radius:2px;margin-right:6px;"></span>motion RMS</span>
+        </div>
       </section>
     </main>
     <script type="module" src="./index.js"></script>
