@@ -534,7 +534,7 @@ function tick() {
       
       timestampEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
       
-      qualEl.textContent = isFinite(features.devSig) ? 
+      qualityEl.textContent = isFinite(features.devSig) ? 
         `Signal: ${(features.devSig * 100).toFixed(0)}%${eyeRateDisplay}` : 
         eyeRateDisplay.replace(' | ', '');
       
