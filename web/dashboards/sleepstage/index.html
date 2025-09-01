@@ -69,8 +69,11 @@
   </head>
   <body>
     <header>
-      <h1>Sleep Stage Analysis</h1>
-      <p class="muted">高度な睡眠ステージ分析とリアルタイム監視</p>
+      <h1>Sleep Stage Analysis (AASM-inspired Candidates)</h1>
+      <p class="muted">無料APIの制約下でのAAMS基準に基づく睡眠ステージ候補の推定</p>
+      <div class="muted small" style="margin-top: 8px;">
+        <strong>注意:</strong> 本システムは生EEG、EOG、EMGなしでの候補推定です。正式な睡眠ステージ判定には医療グレードPSGが必要です。
+      </div>
     </header>
     <main>
       <section class="row">
@@ -80,7 +83,7 @@
       </section>
 
       <section>
-        <h3>Current Sleep Stage</h3>
+        <h3>Current Sleep Stage Candidate</h3>
         <div class="row">
           <div id="currentStage" class="stage-card stage-unknown">
             <div class="status">Unknown</div>
@@ -90,59 +93,78 @@
           <div>
             <div id="quality" class="muted"></div>
             <div id="timestamp" class="muted"></div>
+            <div class="muted small" style="margin-top: 4px;">
+              候補ラベル: Wake | Light NREM candidate | REM candidate | Deep candidate
+            </div>
           </div>
         </div>
       </section>
 
       <section>
-        <h3>Sleep Metrics</h3>
+        <h3>Sleep-related Metrics (Free API)</h3>
         <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-title">Theta/Alpha Ratio</div>
             <div id="thetaAlphaRatio" class="metric-value">-</div>
+            <div class="muted small">入眠・浅睡眠指標</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Beta Relative Power</div>
             <div id="betaRel" class="metric-value">-</div>
+            <div class="muted small">覚醒・REM指標</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Motion Level</div>
             <div id="motionLevel" class="metric-value">-</div>
+            <div class="muted small">体動レベル</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Signal Quality</div>
             <div id="signalQuality" class="metric-value">-</div>
+            <div class="muted small">電極接触品質</div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">Total Sleep Time</div>
+            <div class="metric-title">Total Sleep Time (estimated)</div>
             <div id="totalSleepTime" class="metric-value">0m</div>
+            <div class="muted small">候補ステージ合計</div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">Sleep Efficiency</div>
+            <div class="metric-title">Sleep Efficiency (estimated)</div>
             <div id="sleepEfficiency" class="metric-value">-%</div>
+            <div class="muted small">推定睡眠効率</div>
           </div>
         </div>
       </section>
 
       <section>
-        <h3>Sleep Timeline</h3>
+        <h3>Sleep Stage Timeline (Candidates)</h3>
         <div class="sleep-timeline">
           <div class="timeline-header">
-            <span>Past 60 minutes</span>
+            <span>Past 60 minutes - Stage Candidates</span>
             <span id="timelineRange" class="muted" style="float: right;"></span>
           </div>
           <div id="timeline" class="timeline-content"></div>
         </div>
+        <div class="muted small" style="margin-top: 8px;">
+          <strong>色分け:</strong> 
+          <span style="color: #ef4444;">■ Wake</span> |
+          <span style="color: #22c55e;">■ Light NREM candidate</span> |
+          <span style="color: #06b6d4;">■ REM candidate</span> |
+          <span style="color: #3b82f6;">■ Deep candidate</span>
+        </div>
       </section>
 
       <section>
-        <h3>Detailed Chart</h3>
-        <div class="muted small">リアルタイムの睡眠指標とステージ推移</div>
+        <h3>Detailed Analysis Chart</h3>
+        <div class="muted small">
+          AASM制約下での特徴量変化とステージ候補推移<br>
+          <strong>制限事項:</strong> δ波、睡眠紡錘、K複合波、EMGは検出不可
+        </div>
         <canvas id="chart" width="900" height="300" style="max-width:100%; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset;"></canvas>
         <div class="row small muted" style="margin-top:6px; gap:16px; align-items:center;">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta_rel</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#d97706;border-radius:2px;margin-right:6px;"></span>motion</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha ratio</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta relative</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#d97706;border-radius:2px;margin-right:6px;"></span>motion RMS</span>
         </div>
       </section>
     </main>

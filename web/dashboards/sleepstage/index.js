@@ -73,12 +73,12 @@ function formatDuration(seconds) {
   return `${mins}m ${secs}s`;
 }
 
-// --- Sleep stage analysis
+// --- Sleep stage analysis (Based on AASM constraints with free API limitations)
 function bandsFromPowArray(arr) {
   if (!arr.length || !powLabels.length) return {};
   
-  // Aggregate by bands across sensors
-  const bands = { theta: [], alpha: [], beta: [] };
+  // Aggregate by bands across sensors (theta: 4-8Hz, alpha: 8-12Hz, beta: 12-30Hz)
+  const bands = { theta: [], alpha: [], beta: [], lowBeta: [], highBeta: [] };
   
   for (let i = 0; i < powLabels.length; i++) {
     const label = powLabels[i];
@@ -87,20 +87,44 @@ function bandsFromPowArray(arr) {
     
     if (label.includes('theta')) bands.theta.push(value);
     else if (label.includes('alpha')) bands.alpha.push(value);
-    else if (label.includes('beta')) bands.beta.push(value);
+    else if (label.includes('beta')) {
+      bands.beta.push(value);
+      // Distinguish low beta (12-20Hz) vs high beta (20-30Hz) if possible
+      if (label.includes('lowBeta') || label.includes('low_beta')) bands.lowBeta.push(value);
+      else if (label.includes('highBeta') || label.includes('high_beta')) bands.highBeta.push(value);
+      else {
+        // If no distinction, split evenly
+        bands.lowBeta.push(value * 0.6);
+        bands.highBeta.push(value * 0.4);
+      }
+    }
   }
   
   const theta = avg(bands.theta);
   const alpha = avg(bands.alpha);
   const beta = avg(bands.beta);
-  const betaRel = isFinite(beta) && isFinite(theta) && isFinite(alpha) 
-    ? beta / (theta + alpha + beta) 
-    : NaN;
-  const ratioTA = isFinite(theta) && isFinite(alpha) && alpha > 0 
-    ? theta / alpha 
-    : NaN;
+  const lowBeta = avg(bands.lowBeta);
+  const highBeta = avg(bands.highBeta);
   
-  return { theta, alpha, beta, betaRel, ratioTA };
+  // Calculate relative powers
+  const totalPower = theta + alpha + beta;
+  const betaRel = isFinite(beta) && totalPower > 0 ? beta / totalPower : NaN;
+  const alphaRel = isFinite(alpha) && totalPower > 0 ? alpha / totalPower : NaN;
+  const thetaRel = isFinite(theta) && totalPower > 0 ? theta / totalPower : NaN;
+  
+  // Key ratios for sleep staging
+  const ratioTA = isFinite(theta) && isFinite(alpha) && alpha > 0 ? theta / alpha : NaN;
+  const ratioTB = isFinite(theta) && isFinite(beta) && beta > 0 ? theta / beta : NaN;
+  
+  // Pseudo-delta indicator (very low freq estimation from theta dominance)
+  const pseudoDelta = isFinite(theta) && isFinite(ratioTA) && ratioTA > 3 ? theta * 1.5 : 0;
+  
+  return { 
+    theta, alpha, beta, lowBeta, highBeta,
+    betaRel, alphaRel, thetaRel,
+    ratioTA, ratioTB, pseudoDelta,
+    totalPower
+  };
 }
 
 function computeMotionRmsAt(tCenter) {
@@ -128,24 +152,40 @@ function computeWindowFeatures(now) {
   const powWin = buffers.pow.filter(s => Math.abs(s.t - tCenter) <= halfWin);
   
   if (powWin.length < 3) {
-    return { ratioTA: NaN, betaRel: NaN, motionRel: NaN, devSig: NaN };
+    return { 
+      ratioTA: NaN, betaRel: NaN, alphaRel: NaN, thetaRel: NaN,
+      motionRel: NaN, devSig: NaN, eyeMovementRate: NaN,
+      pseudoDelta: NaN, ratioTB: NaN
+    };
   }
   
   const avgFeatures = {
     ratioTA: avg(powWin.map(s => s.ratioTA).filter(v => isFinite(v))),
     betaRel: avg(powWin.map(s => s.betaRel).filter(v => isFinite(v))),
+    alphaRel: avg(powWin.map(s => s.alphaRel).filter(v => isFinite(v))),
+    thetaRel: avg(powWin.map(s => s.thetaRel).filter(v => isFinite(v))),
+    pseudoDelta: avg(powWin.map(s => s.pseudoDelta).filter(v => isFinite(v))),
+    ratioTB: avg(powWin.map(s => s.ratioTB).filter(v => isFinite(v))),
   };
   
   const motionRel = computeMotionRmsAt(tCenter);
   const devSig = isFinite(devSignal.v) && (now - devSignal.t) < 10 ? devSignal.v : NaN;
   
-  return { ...avgFeatures, motionRel, devSig };
+  // Compute eye movement rate from FAC stream (for REM detection)
+  const facWin = buffers.fac.filter(s => Math.abs(s.t - tCenter) <= halfWin);
+  const eyeEvents = facWin.filter(s => s.eyeEvent).length;
+  const eyeMovementRate = facWin.length > 0 ? eyeEvents / facWin.length : 0;
+  
+  return { ...avgFeatures, motionRel, devSig, eyeMovementRate };
 }
 
-function classifySleepStage(features) {
-  const { ratioTA, betaRel, motionRel, devSig } = features;
+function classifySleepStage(features, now) {
+  const { 
+    ratioTA, betaRel, alphaRel, thetaRel, motionRel, devSig, 
+    eyeMovementRate, pseudoDelta, ratioTB 
+  } = features;
   
-  // Quality check
+  // Signal quality check
   if (isFinite(devSig) && devSig < 0.6) {
     return { label: 'poor_quality', conf: 0.0 };
   }
@@ -157,26 +197,99 @@ function classifySleepStage(features) {
   let label = 'unknown';
   let conf = 0.0;
   
-  // Enhanced classification logic
-  if (ratioTA > 2.5 && betaRel < 0.2) {
-    label = 'Deep';
-    conf = Math.min(0.95, 0.6 + (ratioTA - 2.5) * 0.2);
-  } else if (ratioTA > 1.8 && betaRel < 0.3 && (isNaN(motionRel) || motionRel < 0.3)) {
-    label = 'Light';
-    conf = Math.min(0.90, 0.5 + (ratioTA - 1.8) * 0.3);
-  } else if (ratioTA > 1.5 && betaRel > 0.4 && ratioTA < 2.2) {
-    label = 'REM';
-    conf = Math.min(0.85, 0.4 + Math.abs(ratioTA - 1.8) * 0.3);
-  } else if (betaRel > 0.5 || (isFinite(motionRel) && motionRel > 0.4)) {
+  // AASM-inspired classification with free API constraints
+  
+  // 1. Wake detection (alpha dominant, high motion or high beta)
+  if (alphaRel > 0.3 && (motionRel > 0.4 || betaRel > 0.5)) {
     label = 'Wake';
-    conf = Math.min(0.90, 0.6 + Math.max(betaRel - 0.5, motionRel - 0.4) * 0.5);
-  } else {
-    // Default to Light sleep with low confidence
-    label = 'Light';
+    conf = Math.min(0.95, 0.7 + Math.max(alphaRel - 0.3, betaRel - 0.5) * 0.5);
+  }
+  // 2. Deep_candidate (pseudo-delta high, very low beta, minimal motion)
+  else if (pseudoDelta > 0 && betaRel < 0.15 && 
+           (isNaN(motionRel) || motionRel < 0.2) && ratioTA > 3.0) {
+    label = 'Deep_candidate';
+    conf = Math.min(0.85, 0.5 + (ratioTA - 3.0) * 0.1 + (0.15 - betaRel) * 2);
+  }
+  // 3. REM_candidate (low motion + eye movements + moderate beta)
+  else if ((isNaN(motionRel) || motionRel < 0.3) && 
+           eyeMovementRate > 0.1 && betaRel > 0.25 && betaRel < 0.5) {
+    label = 'REM_candidate';
+    conf = Math.min(0.80, 0.4 + eyeMovementRate * 2 + (betaRel - 0.25) * 1.5);
+  }
+  // 4. Light_NREM_candidate (theta dominance, low motion, moderate beta)
+  else if (ratioTA > 1.5 && betaRel < 0.4 && 
+           (isNaN(motionRel) || motionRel < 0.4)) {
+    label = 'Light_NREM_candidate';
+    conf = Math.min(0.75, 0.4 + (ratioTA - 1.5) * 0.3 + (0.4 - betaRel) * 0.8);
+  }
+  // 5. Fallback based on motion and basic ratios
+  else if (isFinite(motionRel) && motionRel > 0.5) {
+    label = 'Wake';
+    conf = 0.6;
+  }
+  else if (ratioTA > 1.2) {
+    label = 'Light_NREM_candidate';
+    conf = 0.3;
+  }
+  else {
+    label = 'Wake';
     conf = 0.3;
   }
   
-  return { label, conf };
+  // Apply stage transition constraints and minimum duration
+  const constrainedStage = applyStageConstraints(label, conf, now);
+  
+  return constrainedStage;
+}
+
+// Stage transition constraints based on sleep physiology
+let lastValidStage = null;
+let stageStartTime = null;
+const MIN_STAGE_DURATION = 20; // seconds
+
+function applyStageConstraints(newLabel, newConf, now) {
+  // Initialize if first classification
+  if (!lastValidStage) {
+    lastValidStage = { label: newLabel, conf: newConf, t: now };
+    stageStartTime = now;
+    return { label: newLabel, conf: newConf };
+  }
+  
+  const timeSinceStageStart = now - stageStartTime;
+  const currentLabel = lastValidStage.label;
+  
+  // Enforce minimum stage duration (except for poor quality)
+  if (timeSinceStageStart < MIN_STAGE_DURATION && 
+      newLabel !== 'poor_quality' && 
+      currentLabel !== 'unknown') {
+    return { label: currentLabel, conf: lastValidStage.conf };
+  }
+  
+  // Physiologically invalid transitions
+  const invalidTransitions = [
+    ['Wake', 'REM_candidate'],           // Can't go directly from Wake to REM
+    ['Wake', 'Deep_candidate'],          // Usually need Light NREM first
+    ['Deep_candidate', 'Wake'],          // Deep to Wake is rare without Light
+    ['REM_candidate', 'Deep_candidate'], // REM to Deep is uncommon
+  ];
+  
+  for (const [from, to] of invalidTransitions) {
+    if (currentLabel === from && newLabel === to && newConf < 0.8) {
+      // If confidence is very high, allow the transition
+      // Otherwise, transition through Light_NREM_candidate
+      if (newLabel === 'REM_candidate' || newLabel === 'Deep_candidate') {
+        return { label: 'Light_NREM_candidate', conf: Math.max(0.4, newConf * 0.7) };
+      }
+    }
+  }
+  
+  // Accept the new stage
+  if (newLabel !== currentLabel) {
+    stageStartTime = now;
+  }
+  
+  lastValidStage = { label: newLabel, conf: newConf, t: now };
+  return { label: newLabel, conf: newConf };
 }
 
 // --- Chart rendering
@@ -268,9 +381,9 @@ const chart = (() => {
     
     const stageColors = {
       'Wake': '#ef4444',
-      'Light': '#22c55e',
-      'REM': '#06b6d4',
-      'Deep': '#3b82f6',
+      'Light_NREM_candidate': '#22c55e',
+      'REM_candidate': '#06b6d4',
+      'Deep_candidate': '#3b82f6',
       'unknown': '#9ca3af',
       'poor_quality': '#f59e0b'
     };
@@ -300,6 +413,8 @@ function calculateSleepMetrics() {
   
   const now = nowSec();
   const totalTime = now - sessionStartTime;
+  
+  // Only count actual sleep candidates (exclude Wake, unknown, poor_quality)
   const sleepStages = stageHistory.filter(s => 
     s.label !== 'Wake' && s.label !== 'unknown' && s.label !== 'poor_quality'
   );
@@ -333,9 +448,9 @@ function updateTimeline() {
   
   const stageColors = {
     'Wake': '#ef4444',
-    'Light': '#22c55e',
-    'REM': '#06b6d4',
-    'Deep': '#3b82f6',
+    'Light_NREM_candidate': '#22c55e',
+    'REM_candidate': '#06b6d4',
+    'Deep_candidate': '#3b82f6',
     'unknown': '#9ca3af',
     'poor_quality': '#f59e0b'
   };
@@ -374,22 +489,26 @@ function tick() {
   try {
     if (now - lastStepAt >= HOP_SEC) {
       const features = computeWindowFeatures(now);
-      const { label, conf } = classifySleepStage(features);
+      const { label, conf } = classifySleepStage(features, now);
       
       lastStepAt = now;
       
       // Update current stage display
       const stageClasses = {
         'Wake': 'stage-wake',
-        'Light': 'stage-light',
-        'REM': 'stage-rem',
-        'Deep': 'stage-deep',
+        'Light_NREM_candidate': 'stage-light',
+        'REM_candidate': 'stage-rem',
+        'Deep_candidate': 'stage-deep',
         'unknown': 'stage-unknown',
         'poor_quality': 'stage-unknown'
       };
       
       currentStageEl.className = `stage-card ${stageClasses[label] || 'stage-unknown'}`;
-      currentStageEl.querySelector('.status').textContent = label === 'poor_quality' ? 'Poor Signal' : label;
+      
+      // Display stage with appropriate labeling
+      const displayLabel = label === 'poor_quality' ? 'Poor Signal' :
+                          label.replace('_candidate', ' (candidate)').replace('_', ' ');
+      currentStageEl.querySelector('.status').textContent = displayLabel;
       confidenceEl.textContent = conf > 0 ? `Confidence: ${(conf * 100).toFixed(0)}%` : '';
       
       // Update stage duration
@@ -403,13 +522,21 @@ function tick() {
         durationEl.textContent = 'Duration: 0s';
       }
       
-      // Update metrics display
+      // Update metrics display with enhanced features
       thetaAlphaRatioEl.textContent = isFinite(features.ratioTA) ? features.ratioTA.toFixed(2) : '-';
       betaRelEl.textContent = isFinite(features.betaRel) ? features.betaRel.toFixed(2) : '-';
       motionLevelEl.textContent = isFinite(features.motionRel) ? features.motionRel.toFixed(2) : '-';
       signalQualityEl.textContent = isFinite(features.devSig) ? `${(features.devSig * 100).toFixed(0)}%` : '-';
       
+      // Add eye movement rate display if available
+      const eyeRateDisplay = isFinite(features.eyeMovementRate) ? 
+        ` | Eye movements: ${(features.eyeMovementRate * 100).toFixed(0)}%` : '';
+      
       timestampEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+      
+      qualEl.textContent = isFinite(features.devSig) ? 
+        `Signal: ${(features.devSig * 100).toFixed(0)}%${eyeRateDisplay}` : 
+        eyeRateDisplay.replace(' | ', '');
       
       calculateSleepMetrics();
     }

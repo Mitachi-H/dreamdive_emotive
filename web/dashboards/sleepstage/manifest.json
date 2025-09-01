@@ -1,5 +1,5 @@
 {
-  "title": "Sleep Stage Analysis",
-  "description": "詳細な睡眠ステージ分析とリアルタイム監視",
-  "tags": ["pow", "sleep", "analysis", "stage"]
+  "title": "Sleep Stage Analysis (AASM-inspired)",
+  "description": "AASM基準に基づく睡眠ステージ候補の推定（無料API制約下）",
+  "tags": ["pow", "sleep", "AASM", "stage-candidates", "physiological"]
 }
