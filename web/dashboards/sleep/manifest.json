@@ -1,0 +1,5 @@
+{
+  "title": "Sleep Detection",
+  "description": "Detects sleepiness from band power ratios",
+  "tags": ["pow", "sleep"]
+}
