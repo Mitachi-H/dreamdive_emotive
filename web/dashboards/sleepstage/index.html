@@ -34,7 +34,7 @@
         background: #fff;
       }
       .metric-title { font-size: 0.9rem; color: #666; margin-bottom: 4px; }
-      .metric-value { font-size: 1.4rem; font-weight: bold; }
+      .metric-value { font-size: 1.4rem; font-weight: bold; color: #000; }
       .sleep-timeline {
         margin-top: 16px;
         border: 1px solid #e5e7eb;
@@ -155,16 +155,16 @@
       </section>
 
       <section>
-        <h3>Detailed Analysis Chart</h3>
+        <h3>Detailed Analysis Chart (2-minute window)</h3>
         <div class="muted small">
-          AASM制約下での特徴量変化とステージ候補推移<br>
+          過去2分間の詳細な特徴量変化とステージ候補推移<br>
           <strong>制限事項:</strong> δ波、睡眠紡錘、K複合波、EMGは検出不可
         </div>
         <canvas id="chart" width="900" height="300" style="max-width:100%; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset;"></canvas>
         <div class="row small muted" style="margin-top:6px; gap:16px; align-items:center;">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha ratio</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta relative</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#d97706;border-radius:2px;margin-right:6px;"></span>motion RMS</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha ratio (0-4)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta relative (×4 scaled, 0-1)</span>
+          <span class="muted">※ 30秒間隔でグリッド表示</span>
         </div>
       </section>
     </main>

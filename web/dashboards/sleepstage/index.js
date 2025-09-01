@@ -22,8 +22,8 @@ const chartCanvas = $('chart');
 
 // --- Constants
 const EPOCH_SEC = 30;
-const HOP_SEC = 5;
-const CHART_WINDOW_SEC = 3600; // 1 hour
+const HOP_SEC = 10; // Increased from 5 to reduce classification frequency
+const CHART_WINDOW_SEC = 120; // 2 minutes for detailed view
 const TIMELINE_WINDOW_SEC = 3600; // 1 hour
 
 // --- State
@@ -165,7 +165,19 @@ function computeWindowFeatures(now) {
   
   const powWin = buffers.pow.filter(s => Math.abs(s.t - tCenter) <= halfWin);
   
+  console.log('[sleepstage] computeWindowFeatures:', {
+    tCenter,
+    powWindowSize: powWin.length,
+    totalPowBuffer: buffers.pow.length,
+    recentPowSamples: buffers.pow.slice(-3).map(s => ({
+      t: s.t,
+      ratioTA: isFinite(s.ratioTA) ? s.ratioTA.toFixed(3) : 'NaN',
+      betaRel: isFinite(s.betaRel) ? s.betaRel.toFixed(3) : 'NaN'
+    }))
+  });
+  
   if (powWin.length < 3) {
+    console.log('[sleepstage] computeWindowFeatures: insufficient pow data, returning NaN features');
     return { 
       ratioTA: NaN, betaRel: NaN, alphaRel: NaN, thetaRel: NaN,
       motionRel: NaN, devSig: NaN, eyeMovementRate: NaN,
@@ -199,12 +211,26 @@ function classifySleepStage(features, now) {
     eyeMovementRate, pseudoDelta, ratioTB 
   } = features;
   
+  // Enhanced debugging for classification
+  console.log('[sleepstage] classifySleepStage input features:', {
+    ratioTA: isFinite(ratioTA) ? ratioTA.toFixed(3) : 'NaN',
+    betaRel: isFinite(betaRel) ? betaRel.toFixed(3) : 'NaN',
+    alphaRel: isFinite(alphaRel) ? alphaRel.toFixed(3) : 'NaN',
+    thetaRel: isFinite(thetaRel) ? thetaRel.toFixed(3) : 'NaN',
+    motionRel: isFinite(motionRel) ? motionRel.toFixed(3) : 'NaN',
+    devSig: isFinite(devSig) ? devSig.toFixed(3) : 'NaN',
+    eyeMovementRate: isFinite(eyeMovementRate) ? eyeMovementRate.toFixed(3) : 'NaN',
+    pseudoDelta: isFinite(pseudoDelta) ? pseudoDelta.toFixed(3) : 'NaN'
+  });
+  
   // Signal quality check
   if (isFinite(devSig) && devSig < 0.6) {
+    console.log('[sleepstage] Classification: poor_quality (devSig < 0.6)');
     return { label: 'poor_quality', conf: 0.0 };
   }
   
   if (!isFinite(ratioTA) || !isFinite(betaRel)) {
+    console.log('[sleepstage] Classification: unknown (missing key features)');
     return { label: 'unknown', conf: 0.0 };
   }
   
@@ -212,46 +238,83 @@ function classifySleepStage(features, now) {
   let conf = 0.0;
   
   // AASM-inspired classification with free API constraints
+  console.log('[sleepstage] Starting classification logic...');
   
   // 1. Wake detection (alpha dominant, high motion or high beta)
-  if (alphaRel > 0.3 && (motionRel > 0.4 || betaRel > 0.5)) {
+  if (alphaRel > 0.35 && (motionRel > 0.3 || betaRel > 0.4)) { // Made more conservative
     label = 'Wake';
-    conf = Math.min(0.95, 0.7 + Math.max(alphaRel - 0.3, betaRel - 0.5) * 0.5);
+    conf = Math.min(0.95, 0.7 + Math.max(alphaRel - 0.35, betaRel - 0.4) * 0.5);
+    console.log('[sleepstage] Classification: Wake', {
+      condition: 'alphaRel > 0.35 && (motionRel > 0.3 || betaRel > 0.4)',
+      alphaRel, motionRel, betaRel, conf
+    });
   }
   // 2. Deep_candidate (pseudo-delta high, very low beta, minimal motion)
-  else if (pseudoDelta > 0 && betaRel < 0.15 && 
-           (isNaN(motionRel) || motionRel < 0.2) && ratioTA > 3.0) {
+  else if (pseudoDelta > 0 && betaRel < 0.12 && // Made more strict
+           (isNaN(motionRel) || motionRel < 0.15) && ratioTA > 3.5) { // Made more strict
     label = 'Deep_candidate';
-    conf = Math.min(0.85, 0.5 + (ratioTA - 3.0) * 0.1 + (0.15 - betaRel) * 2);
+    conf = Math.min(0.85, 0.5 + (ratioTA - 3.5) * 0.1 + (0.12 - betaRel) * 2);
+    console.log('[sleepstage] Classification: Deep_candidate', {
+      condition: 'pseudoDelta > 0 && betaRel < 0.12 && motionRel < 0.15 && ratioTA > 3.5',
+      pseudoDelta, betaRel, motionRel, ratioTA, conf
+    });
   }
   // 3. REM_candidate (low motion + eye movements + moderate beta)
-  else if ((isNaN(motionRel) || motionRel < 0.3) && 
-           eyeMovementRate > 0.1 && betaRel > 0.25 && betaRel < 0.5) {
+  else if ((isNaN(motionRel) || motionRel < 0.25) && 
+           eyeMovementRate > 0.15 && betaRel > 0.3 && betaRel < 0.6) { // Made more strict
     label = 'REM_candidate';
-    conf = Math.min(0.80, 0.4 + eyeMovementRate * 2 + (betaRel - 0.25) * 1.5);
+    conf = Math.min(0.80, 0.4 + eyeMovementRate * 2 + (betaRel - 0.3) * 1.5);
+    console.log('[sleepstage] Classification: REM_candidate', {
+      condition: 'motionRel < 0.25 && eyeMovementRate > 0.15 && betaRel 0.3-0.6',
+      motionRel, eyeMovementRate, betaRel, conf
+    });
   }
   // 4. Light_NREM_candidate (theta dominance, low motion, moderate beta)
-  else if (ratioTA > 1.5 && betaRel < 0.4 && 
-           (isNaN(motionRel) || motionRel < 0.4)) {
+  else if (ratioTA > 2.0 && betaRel < 0.35 && // Made more strict
+           (isNaN(motionRel) || motionRel < 0.3)) {
     label = 'Light_NREM_candidate';
-    conf = Math.min(0.75, 0.4 + (ratioTA - 1.5) * 0.3 + (0.4 - betaRel) * 0.8);
+    conf = Math.min(0.75, 0.4 + (ratioTA - 2.0) * 0.3 + (0.35 - betaRel) * 0.8);
+    console.log('[sleepstage] Classification: Light_NREM_candidate', {
+      condition: 'ratioTA > 2.0 && betaRel < 0.35 && motionRel < 0.3',
+      ratioTA, betaRel, motionRel, conf
+    });
   }
   // 5. Fallback based on motion and basic ratios
   else if (isFinite(motionRel) && motionRel > 0.5) {
     label = 'Wake';
     conf = 0.6;
+    console.log('[sleepstage] Classification: Wake (fallback - high motion)', {
+      condition: 'motionRel > 0.5',
+      motionRel, conf
+    });
   }
   else if (ratioTA > 1.2) {
     label = 'Light_NREM_candidate';
     conf = 0.3;
+    console.log('[sleepstage] Classification: Light_NREM_candidate (fallback - theta dominant)', {
+      condition: 'ratioTA > 1.2',
+      ratioTA, conf
+    });
   }
   else {
     label = 'Wake';
     conf = 0.3;
+    console.log('[sleepstage] Classification: Wake (default fallback)', {
+      condition: 'default',
+      conf
+    });
   }
   
   // Apply stage transition constraints and minimum duration
   const constrainedStage = applyStageConstraints(label, conf, now);
+  
+  console.log('[sleepstage] Final classification result:', {
+    originalLabel: label,
+    originalConf: conf.toFixed(3),
+    finalLabel: constrainedStage.label,
+    finalConf: constrainedStage.conf.toFixed(3),
+    wasConstrained: label !== constrainedStage.label
+  });
   
   return constrainedStage;
 }
@@ -259,23 +322,36 @@ function classifySleepStage(features, now) {
 // Stage transition constraints based on sleep physiology
 let lastValidStage = null;
 let stageStartTime = null;
-const MIN_STAGE_DURATION = 20; // seconds
+const MIN_STAGE_DURATION = 30; // Increased from 20 to 30 seconds for more stability
 
 function applyStageConstraints(newLabel, newConf, now) {
   // Initialize if first classification
   if (!lastValidStage) {
     lastValidStage = { label: newLabel, conf: newConf, t: now };
     stageStartTime = now;
+    console.log('[sleepstage] Stage constraints: First classification', { newLabel, newConf });
     return { label: newLabel, conf: newConf };
   }
   
   const timeSinceStageStart = now - stageStartTime;
   const currentLabel = lastValidStage.label;
   
+  console.log('[sleepstage] Stage constraints input:', {
+    currentLabel,
+    newLabel,
+    timeSinceStageStart: timeSinceStageStart.toFixed(1),
+    minDuration: MIN_STAGE_DURATION,
+    newConf: newConf.toFixed(3)
+  });
+  
   // Enforce minimum stage duration (except for poor quality)
   if (timeSinceStageStart < MIN_STAGE_DURATION && 
       newLabel !== 'poor_quality' && 
       currentLabel !== 'unknown') {
+    console.log('[sleepstage] Stage constraints: Enforcing minimum duration', {
+      action: 'keeping current stage',
+      reason: `duration ${timeSinceStageStart.toFixed(1)}s < ${MIN_STAGE_DURATION}s`
+    });
     return { label: currentLabel, conf: lastValidStage.conf };
   }
   
@@ -292,6 +368,12 @@ function applyStageConstraints(newLabel, newConf, now) {
       // If confidence is very high, allow the transition
       // Otherwise, transition through Light_NREM_candidate
       if (newLabel === 'REM_candidate' || newLabel === 'Deep_candidate') {
+        console.log('[sleepstage] Stage constraints: Invalid transition blocked', {
+          from: currentLabel,
+          to: newLabel,
+          reason: 'physiologically invalid',
+          redirectedTo: 'Light_NREM_candidate'
+        });
         return { label: 'Light_NREM_candidate', conf: Math.max(0.4, newConf * 0.7) };
       }
     }
@@ -300,6 +382,11 @@ function applyStageConstraints(newLabel, newConf, now) {
   // Accept the new stage
   if (newLabel !== currentLabel) {
     stageStartTime = now;
+    console.log('[sleepstage] Stage constraints: Stage transition accepted', {
+      from: currentLabel,
+      to: newLabel,
+      newDuration: 0
+    });
   }
   
   lastValidStage = { label: newLabel, conf: newConf, t: now };
@@ -342,11 +429,41 @@ const chart = (() => {
     ctx.lineTo(w - pad.r, h - pad.b);
     ctx.stroke();
     
-    // Prepare data
+    // Draw time grid lines for 2-minute window (every 30 seconds)
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
     const x0 = now - CHART_WINDOW_SEC;
+    for (let i = 0; i <= 4; i++) { // 4 intervals of 30 seconds each
+      const timePoint = x0 + (i * 30);
+      const x = mapX(timePoint, now);
+      if (x >= pad.l && x <= w - pad.r) {
+        ctx.beginPath();
+        ctx.moveTo(x, pad.t);
+        ctx.lineTo(x, h - pad.b);
+        ctx.stroke();
+        
+        // Add time labels
+        ctx.fillStyle = '#666';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        const label = i === 0 ? '2m ago' : i === 4 ? 'now' : `-${2 - (i * 0.5)}m`;
+        ctx.fillText(label, x, h - pad.b + 15);
+      }
+    }
+    
+    // Prepare data
     const powData = buffers.pow.filter(s => s.t >= x0);
     
     if (powData.length > 0) {
+      // Draw Y-axis labels for theta/alpha ratio (0-4)
+      ctx.fillStyle = '#666';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      for (let i = 0; i <= 4; i++) {
+        const y = mapY(i, 0, 4);
+        ctx.fillText(i.toString(), pad.l - 5, y + 3);
+      }
+      
       // Draw theta/alpha ratio
       ctx.strokeStyle = '#1d4ed8';
       ctx.lineWidth = 2;
@@ -366,7 +483,7 @@ const chart = (() => {
       }
       ctx.stroke();
       
-      // Draw beta relative
+      // Draw beta relative (scale 0-1 but map to 0-4 range for visibility)
       ctx.strokeStyle = '#059669';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -374,7 +491,7 @@ const chart = (() => {
       for (const point of powData) {
         if (isFinite(point.betaRel)) {
           const x = mapX(point.t, now);
-          const y = mapY(point.betaRel, 0, 1);
+          const y = mapY(point.betaRel * 4, 0, 4); // Scale up for visibility
           if (first) {
             ctx.moveTo(x, y);
             first = false;
