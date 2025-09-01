@@ -401,6 +401,47 @@ function createApp(cortex) {
     }
   });
 
+  // Facial expression: get/set threshold for an action
+  app.post('/api/fac/threshold', apiAuth, limiter, express.json(), async (req, res) => {
+    try {
+      const { status, action, value, profile, session, headsetId } = req.body || {};
+      const st = String(status || '').toLowerCase();
+      if (st !== 'get' && st !== 'set') return res.status(400).json({ ok: false, error: 'status must be "get" or "set"' });
+      if (!action || typeof action !== 'string') return res.status(400).json({ ok: false, error: 'Missing action' });
+      // Map UI synonyms to Cortex canonical tokens
+      const mapFacAction = (s) => {
+        const x = String(s || '').toLowerCase();
+        if (x === 'blink') return 'blink';
+        if (x === 'winkl' || x === 'wink_left' || x === 'winkleft') return 'winkLeft';
+        if (x === 'winkr' || x === 'wink_right' || x === 'winkright') return 'winkRight';
+        if (x === 'lookl' || x === 'lookleft' || x === 'lookr' || x === 'lookright' || x === 'horieye' || x === 'hori_eye' || x === 'hori') return 'horiEye';
+        if (s === 'winkL' || s === 'winkR' || s === 'lookL' || s === 'lookR') return mapFacAction(s.toLowerCase());
+        // passthrough for already canonical like 'winkLeft', 'winkRight', 'horiEye'
+        if (s === 'winkLeft' || s === 'winkRight' || s === 'horiEye') return s;
+        return null;
+      };
+      const actionCanon = mapFacAction(action);
+      if (!actionCanon) return res.status(400).json({ ok: false, error: `Unsupported action: ${action}` });
+      if (st === 'set') {
+        const v = Number(value);
+        if (!Number.isFinite(v)) return res.status(400).json({ ok: false, error: 'value must be a number' });
+        if (v < 0 || v > 1000) return res.status(400).json({ ok: false, error: 'value must be between 0 and 1000' });
+      }
+      // Ensure authorized and have session (unless explicit profile provided)
+      if (!session && !profile) {
+        await cortex.ensureReadyForStreams(headsetId);
+      } else {
+        // At least ensure we are authorized
+        await cortex.connect();
+        await cortex.authorize();
+      }
+      const result = await cortex.facialExpressionThreshold({ status: st, action: actionCanon, value, profile, session });
+      res.json({ ok: true, result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
+
   // ----- Records API -----
   // Start a record, optionally subscribe to selected streams first
   app.post('/api/record/start', apiAuth, limiter, express.json(), async (req, res) => {

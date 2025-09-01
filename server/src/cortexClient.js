@@ -430,6 +430,24 @@ class CortexClient extends EventEmitter {
     return result;
   }
 
+  // ----- Facial Expression Threshold -----
+  // Wrapper for Cortex `facialExpressionThreshold` JSON-RPC
+  // params: { status: 'get'|'set', action: string, value?: number, profile?: string, session?: string }
+  async facialExpressionThreshold({ status, action, value, profile, session } = {}) {
+    if (!this.authToken) await this.authorize();
+    const params = {
+      cortexToken: this.authToken,
+      status,
+      action,
+    };
+    if (typeof value === 'number' && status === 'set') params.value = value;
+    // Prefer explicit session/profile, else use current session/profile
+    if (session) params.session = session; else if (this.sessionId) params.session = this.sessionId;
+    if (profile) params.profile = profile; else if (this.profile) params.profile = this.profile;
+    if (!params.session && !params.profile) throw new Error('Missing session or profile');
+    return this._rpc('facialExpressionThreshold', params);
+  }
+
   // ----- Profiles (minimal parity) -----
   async getCurrentProfile() {
     if (!this.authToken || !this.headsetId) return null;
