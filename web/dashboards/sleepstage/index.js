@@ -4,6 +4,8 @@ import { wsConnect, api } from '/lib/dashboard-sdk.js';
 const $ = (id) => document.getElementById(id);
 const startBtn = $('start');
 const stopBtn = $('stop');
+const headsetIdInput = $('headsetId');
+const saveHeadsetBtn = $('saveHeadset');
 const wsStatus = $('wsstatus');
 const currentStageEl = $('currentStage');
 const confidenceEl = $('confidence');
@@ -765,12 +767,14 @@ function stopRenewPow() {
 // --- Event handlers
 startBtn.addEventListener('click', async () => {
   try {
+    const headsetId = headsetIdInput.value.trim() || localStorage.getItem('headset_id') || undefined;
+    
     await Promise.all([
-      api.stream.start('pow'),
-      api.stream.start('mot'),
-      api.stream.start('dev'),
-      api.stream.start('eq'),
-      api.stream.start('fac'),
+      api.stream.start('pow', { headsetId }),
+      api.stream.start('mot', { headsetId }),
+      api.stream.start('dev', { headsetId }),
+      api.stream.start('eq', { headsetId }),
+      api.stream.start('fac', { headsetId }),
     ]);
     
     startRenewPow();
@@ -806,6 +810,20 @@ stopBtn.addEventListener('click', async () => {
     console.log('Sleep stage analysis stopped');
   } catch (e) {
     alert('Stop error: ' + (e?.message || String(e)));
+  }
+});
+
+// --- Headset ID save/restore functionality
+const savedHeadsetId = localStorage.getItem('headset_id');
+if (savedHeadsetId && !headsetIdInput.value) {
+  headsetIdInput.value = savedHeadsetId;
+}
+
+saveHeadsetBtn.addEventListener('click', () => {
+  const headsetId = headsetIdInput.value.trim();
+  if (headsetId) {
+    localStorage.setItem('headset_id', headsetId);
+    console.log('Headset ID saved:', headsetId);
   }
 });
 
