@@ -22,6 +22,9 @@ function broadcast(obj) {
   });
 }
 
+// Expose broadcast to Express app so routes can push custom events (e.g., EOG)
+app.locals.broadcast = broadcast;
+
 // Cortex event wiring
 cortex.on("log", (m) => console.log("[cortex]", m));
 cortex.on("error", (e) => console.error("[cortex:error]", e.message || e));

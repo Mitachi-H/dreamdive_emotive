@@ -1,0 +1,6 @@
+{
+  "title": "LRLR: Eye + EOG",
+  "description": "Eye Actions (look L/R unified) aligned with Arduino EOG waveform",
+  "tags": ["fac", "eog", "LRLR"]
+}
+
