@@ -617,8 +617,13 @@ function tick() {
 let wsConnected = false;
 let wsConnectionPromise = null;
 
+// Set initial status
+wsStatus.textContent = 'WS: connecting...';
+console.log('[sleepstage] Initializing WebSocket connection... (Version: 2025-09-02-v2)');
+
 const ws = wsConnect({
   onOpen: () => {
+    console.log('[sleepstage] WebSocket connected');
     wsStatus.textContent = 'WS: connected';
     wsConnected = true;
     if (wsConnectionPromise) {
@@ -627,10 +632,12 @@ const ws = wsConnect({
     }
   },
   onClose: () => {
+    console.log('[sleepstage] WebSocket closed');
     wsStatus.textContent = 'WS: disconnected (retrying)';
     wsConnected = false;
   },
-  onError: () => {
+  onError: (error) => {
+    console.error('[sleepstage] WebSocket error:', error);
     wsStatus.textContent = 'WS: error';
     wsConnected = false;
     if (wsConnectionPromise) {
@@ -640,6 +647,7 @@ const ws = wsConnect({
   },
   onType: {
     labels: (payload) => {
+      console.log('[sleepstage] labels event received:', payload);
       if (payload.streamName === 'pow' && Array.isArray(payload.labels)) {
         powLabels = payload.labels;
         console.log('[sleepstage] pow labels received:', powLabels);
@@ -691,28 +699,34 @@ const ws = wsConnect({
     },
     mot: (payload) => {
       const arr = payload?.mot || [];
-      console.log('[sleepstage] mot payload received:', { arr, motLabels, payloadLength: arr.length, labelsLength: motLabels.length });
+      console.log('[sleepstage] mot payload received (v2):', { arr, motLabels, payloadLength: arr.length, labelsLength: motLabels.length });
       
-      if (!arr.length || !motLabels.length) {
-        console.log('[sleepstage] mot: skipping - no data or labels');
+      if (!arr.length) {
+        console.log('[sleepstage] mot: skipping - no data');
         return;
       }
       
       const t = payload.time || nowSec();
-      const idxX = motLabels.indexOf('ACCX');
-      const idxY = motLabels.indexOf('ACCY');
-      const idxZ = motLabels.indexOf('ACCZ');
       
-      console.log('[sleepstage] mot indices:', { idxX, idxY, idxZ });
+      // Force fallback for now until labels issue is resolved
+      let idxX = 3, idxY = 4, idxZ = 5; // Assume standard EPOC order
+      
+      console.log('[sleepstage] mot indices (forced fallback):', { idxX, idxY, idxZ, arrayLength: arr.length });
+      
+      if (idxX >= arr.length || idxY >= arr.length || idxZ >= arr.length) {
+        console.log('[sleepstage] mot: indices out of bounds, skipping');
+        return;
+      }
       
       const ax = Number(arr[idxX]);
       const ay = Number(arr[idxY]);
       const az = Number(arr[idxZ]);
       
-      console.log('[sleepstage] mot values:', { ax, ay, az });
+      console.log('[sleepstage] mot values (v2):', { ax, ay, az, rawValues: [arr[idxX], arr[idxY], arr[idxZ]] });
       
       if ([ax, ay, az].every(v => typeof v === 'number' && isFinite(v))) {
         const accMag = Math.hypot(ax, ay, az);
+        console.log('[sleepstage] mot: computed accMag =', accMag);
         buffers.mot.push({ t, accMag });
         pruneBuffer(buffers.mot, nowSec() - CHART_WINDOW_SEC);
         console.log('[sleepstage] mot: added to buffer, accMag:', accMag, 'buffer size:', buffers.mot.length);
@@ -762,7 +776,7 @@ const ws = wsConnect({
 });
 
 // --- WebSocket connection utility
-function waitForWebSocketConnection() {
+function waitForWebSocketConnection(timeoutMs = 5000) {
   if (wsConnected) {
     return Promise.resolve();
   }
@@ -772,6 +786,14 @@ function waitForWebSocketConnection() {
     wsConnectionPromise.promise = new Promise((resolve, reject) => {
       wsConnectionPromise.resolve = resolve;
       wsConnectionPromise.reject = reject;
+      
+      // Add timeout to avoid infinite waiting
+      setTimeout(() => {
+        if (wsConnectionPromise) {
+          wsConnectionPromise.reject(new Error('WebSocket connection timeout'));
+          wsConnectionPromise = null;
+        }
+      }, timeoutMs);
     });
   }
   
@@ -804,13 +826,17 @@ startBtn.addEventListener('click', async () => {
     
     const headsetId = headsetIdInput.value.trim() || localStorage.getItem('headset_id') || undefined;
     
-    await Promise.all([
-      api.stream.start('pow', { headsetId }),
-      api.stream.start('mot', { headsetId }),
-      api.stream.start('dev', { headsetId }),
-      api.stream.start('eq', { headsetId }),
-      api.stream.start('fac', { headsetId }),
-    ]);
+    // Start streams one by one to ensure proper label reception
+    console.log('[sleepstage] Starting streams...');
+    await api.stream.start('pow', { headsetId });
+    await new Promise(resolve => setTimeout(resolve, 500)); // Wait for labels
+    
+    await api.stream.start('mot', { headsetId });
+    await new Promise(resolve => setTimeout(resolve, 500)); // Wait for labels
+    
+    await api.stream.start('dev', { headsetId });
+    await api.stream.start('eq', { headsetId });
+    await api.stream.start('fac', { headsetId });
     
     startRenewPow();
     startRenewEq();
@@ -822,8 +848,23 @@ startBtn.addEventListener('click', async () => {
     totalSleepTimeEl.textContent = '0m';
     sleepEfficiencyEl.textContent = '-%';
     
+    // Start periodic status reporting
+    const statusInterval = setInterval(() => {
+      console.log('[sleepstage] Status:', {
+        motLabels: motLabels.length,
+        powLabels: powLabels.length,
+        motBufferSize: buffers.mot.length,
+        powBufferSize: buffers.pow.length,
+        wsConnected
+      });
+    }, 10000); // Every 10 seconds
+    
     console.log('Sleep stage analysis started');
   } catch (e) {
+    console.error('Start error:', e);
+    if (e.message.includes('timeout')) {
+      wsStatus.textContent = 'WS: connection timeout - try refreshing page';
+    }
     alert('Start error: ' + (e?.message || String(e)));
   }
 });
