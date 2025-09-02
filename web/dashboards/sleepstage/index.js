@@ -51,6 +51,7 @@ const TIMELINE_WINDOW_SEC = 3600; // 1 hour
 // --- State
 let powLabels = [];
 let motLabels = [];
+let motIndex = new Map(); // Index map like motion.js
 let devLabels = [];
 let eqLabels = [];
 
@@ -103,6 +104,16 @@ function formatDuration(seconds) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}m ${secs}s`;
+}
+
+// Helper functions like motion.js
+function arrAt(key, arr) { 
+  const i = motIndex.get(key); 
+  return i != null ? arr[i] : NaN; 
+}
+
+function num(v) { 
+  return typeof v === 'number' && isFinite(v) ? v : NaN; 
 }
 
 // --- Sleep stage analysis (Wake/Sleep binary classification with Registered Developer streams only)
@@ -645,6 +656,21 @@ const ws = wsConnect({
       wsConnectionPromise = null;
     }
   },
+  onMessage: (ev, payload) => {
+    // Handle labels event directly from message (fallback)
+    if (payload && payload.type === 'labels') {
+      console.log('[sleepstage] Direct labels event received:', payload);
+      if (payload.payload && payload.payload.streamName === 'mot' && Array.isArray(payload.payload.labels)) {
+        motLabels = payload.payload.labels;
+        motIndex = new Map(motLabels.map((l, i) => [l, i]));
+        console.log('[sleepstage] mot labels received via onMessage:', motLabels);
+      }
+      if (payload.payload && payload.payload.streamName === 'pow' && Array.isArray(payload.payload.labels)) {
+        powLabels = payload.payload.labels;
+        console.log('[sleepstage] pow labels received via onMessage:', powLabels);
+      }
+    }
+  },
   onType: {
     labels: (payload) => {
       console.log('[sleepstage] labels event received:', payload);
@@ -654,7 +680,8 @@ const ws = wsConnect({
       }
       if (payload.streamName === 'mot' && Array.isArray(payload.labels)) {
         motLabels = payload.labels;
-        console.log('[sleepstage] mot labels received:', motLabels);
+        motIndex = new Map(motLabels.map((l, i) => [l, i]));
+        console.log('[sleepstage] mot labels received:', motLabels, 'index:', motIndex);
       }
       if (payload.streamName === 'dev' && Array.isArray(payload.labels)) {
         devLabels = payload.labels;
@@ -699,7 +726,13 @@ const ws = wsConnect({
     },
     mot: (payload) => {
       const arr = payload?.mot || [];
-      console.log('[sleepstage] mot payload received (v2):', { arr, motLabels, payloadLength: arr.length, labelsLength: motLabels.length });
+      console.log('[sleepstage] mot payload received (v3):', { 
+        arr, 
+        motLabels, 
+        payloadLength: arr.length, 
+        labelsLength: motLabels.length,
+        hasIndex: motIndex.size > 0
+      });
       
       if (!arr.length) {
         console.log('[sleepstage] mot: skipping - no data');
@@ -708,21 +741,32 @@ const ws = wsConnect({
       
       const t = payload.time || nowSec();
       
-      // Force fallback for now until labels issue is resolved
-      let idxX = 3, idxY = 4, idxZ = 5; // Assume standard EPOC order
+      // Use motion.js style approach
+      const ax = num(arrAt('ACCX', arr));
+      const ay = num(arrAt('ACCY', arr));
+      const az = num(arrAt('ACCZ', arr));
       
-      console.log('[sleepstage] mot indices (forced fallback):', { idxX, idxY, idxZ, arrayLength: arr.length });
+      console.log('[sleepstage] mot values (motion.js style):', { ax, ay, az });
       
-      if (idxX >= arr.length || idxY >= arr.length || idxZ >= arr.length) {
-        console.log('[sleepstage] mot: indices out of bounds, skipping');
+      // Fallback to fixed indices if arrAt fails
+      if (!isFinite(ax) || !isFinite(ay) || !isFinite(az)) {
+        console.log('[sleepstage] mot: arrAt failed, trying fallback indices');
+        const axFb = Number(arr[3]);
+        const ayFb = Number(arr[4]);
+        const azFb = Number(arr[5]);
+        
+        console.log('[sleepstage] mot fallback values:', { axFb, ayFb, azFb });
+        
+        if ([axFb, ayFb, azFb].every(v => typeof v === 'number' && isFinite(v))) {
+          const accMag = Math.hypot(axFb, ayFb, azFb);
+          console.log('[sleepstage] mot: computed accMag (fallback) =', accMag);
+          buffers.mot.push({ t, accMag });
+          pruneBuffer(buffers.mot, nowSec() - CHART_WINDOW_SEC);
+        } else {
+          console.log('[sleepstage] mot: fallback failed, skipping');
+        }
         return;
       }
-      
-      const ax = Number(arr[idxX]);
-      const ay = Number(arr[idxY]);
-      const az = Number(arr[idxZ]);
-      
-      console.log('[sleepstage] mot values (v2):', { ax, ay, az, rawValues: [arr[idxX], arr[idxY], arr[idxZ]] });
       
       if ([ax, ay, az].every(v => typeof v === 'number' && isFinite(v))) {
         const accMag = Math.hypot(ax, ay, az);
