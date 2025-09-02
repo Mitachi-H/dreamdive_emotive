@@ -126,7 +126,7 @@
           <div class="metric-card">
             <div class="metric-title">Total Sleep Time (estimated)</div>
             <div id="totalSleepTime" class="metric-value">0m</div>
-            <div class="muted small">候補ステージ合計</div>
+            <div class="muted small">Sleep状態合計</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Sleep Efficiency (estimated)</div>
@@ -137,10 +137,10 @@
       </section>
 
       <section>
-        <h3>Sleep Stage Timeline (Candidates)</h3>
+        <h3>Wake/Sleep Timeline</h3>
         <div class="sleep-timeline">
           <div class="timeline-header">
-            <span>Past 60 minutes - Stage Candidates</span>
+            <span>Past 60 minutes - Wake/Sleep Classification</span>
             <span id="timelineRange" class="muted" style="float: right;"></span>
           </div>
           <div id="timeline" class="timeline-content"></div>
@@ -148,22 +148,20 @@
         <div class="muted small" style="margin-top: 8px;">
           <strong>色分け:</strong> 
           <span style="color: #ef4444;">■ Wake</span> |
-          <span style="color: #22c55e;">■ Light NREM candidate</span> |
-          <span style="color: #06b6d4;">■ REM candidate</span> |
-          <span style="color: #3b82f6;">■ Deep candidate</span>
+          <span style="color: #3b82f6;">■ Sleep</span>
         </div>
       </section>
 
       <section>
         <h3>Detailed Analysis Chart (2-minute window)</h3>
         <div class="muted small">
-          過去2分間の詳細な特徴量変化とステージ候補推移<br>
-          <strong>制限事項:</strong> δ波、睡眠紡錘、K複合波、EMGは検出不可
+          過去2分間の詳細な特徴量変化とWake/Sleep分類推移<br>
+          <strong>制限事項:</strong> Registered Developer APIの制約により、δ波、睡眠紡錘、K複合波、EMGは検出不可
         </div>
         <canvas id="chart" width="900" height="300" style="max-width:100%; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #ccc3 inset;"></canvas>
         <div class="row small muted" style="margin-top:6px; gap:16px; align-items:center;">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta/alpha ratio (0-4)</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta relative (×4 scaled, 0-1)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1d4ed8;border-radius:2px;margin-right:6px;"></span>theta relative power (0-1)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#059669;border-radius:2px;margin-right:6px;"></span>beta relative power (0-1)</span>
           <span class="muted">※ 30秒間隔でグリッド表示</span>
         </div>
       </section>

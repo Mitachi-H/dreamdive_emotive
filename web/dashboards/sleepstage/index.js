@@ -468,9 +468,9 @@ function calculateSleepMetrics() {
   const now = nowSec();
   const totalTime = now - sessionStartTime;
   
-  // Only count actual sleep candidates (exclude Wake, unknown, poor_quality)
+  // Only count Sleep stages (exclude Wake, unknown, poor_quality)
   const sleepStages = stageHistory.filter(s => 
-    s.label !== 'Wake' && s.label !== 'unknown' && s.label !== 'poor_quality'
+    s.label === 'Sleep'
   );
   
   let totalSleepTime = 0;
