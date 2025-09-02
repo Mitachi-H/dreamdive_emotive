@@ -17,9 +17,7 @@
         min-width: 120px;
       }
       .stage-wake { border-color: #ef4444; background: #fef2f2; }
-      .stage-light { border-color: #22c55e; background: #f0fdf4; }
-      .stage-rem { border-color: #06b6d4; background: #f0fdfa; }
-      .stage-deep { border-color: #3b82f6; background: #eff6ff; }
+      .stage-sleep { border-color: #3b82f6; background: #eff6ff; }
       .stage-unknown { border-color: #9ca3af; background: #f9fafb; }
       .metrics-grid {
         display: grid;
@@ -69,10 +67,10 @@
   </head>
   <body>
     <header>
-      <h1>Sleep Stage Analysis (AASM-inspired Candidates)</h1>
-      <p class="muted">無料APIの制約下でのAAMS基準に基づく睡眠ステージ候補の推定</p>
+      <h1>Wake/Sleep Classification</h1>
+      <p class="muted">Registered Developer APIを使用したWake/Sleep バイナリ分類</p>
       <div class="muted small" style="margin-top: 8px;">
-        <strong>注意:</strong> 本システムは生EEG、EOG、EMGなしでの候補推定です。正式な睡眠ステージ判定には医療グレードPSGが必要です。
+        <strong>注意:</strong> 本システムはAPI制約によりWake/Sleepのバイナリ分類のみを行います。詳細な睡眠ステージには医療グレードPSGが必要です。
       </div>
     </header>
     <main>
@@ -83,7 +81,7 @@
       </section>
 
       <section>
-        <h3>Current Sleep Stage Candidate</h3>
+        <h3>Current Sleep State</h3>
         <div class="row">
           <div id="currentStage" class="stage-card stage-unknown">
             <div class="status">Unknown</div>
@@ -94,24 +92,24 @@
             <div id="quality" class="muted"></div>
             <div id="timestamp" class="muted"></div>
             <div class="muted small" style="margin-top: 4px;">
-              候補ラベル: Wake | Light NREM candidate | REM candidate | Deep candidate
+              分類ラベル: Wake | Sleep
             </div>
           </div>
         </div>
       </section>
 
       <section>
-        <h3>Sleep-related Metrics (Free API)</h3>
+        <h3>Sleep-related Metrics (Registered Developer API)</h3>
         <div class="metrics-grid">
           <div class="metric-card">
-            <div class="metric-title">Theta/Alpha Ratio</div>
+            <div class="metric-title">Theta Relative Power</div>
             <div id="thetaAlphaRatio" class="metric-value">-</div>
-            <div class="muted small">入眠・浅睡眠指標</div>
+            <div class="muted small">睡眠指標</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Beta Relative Power</div>
             <div id="betaRel" class="metric-value">-</div>
-            <div class="muted small">覚醒・REM指標</div>
+            <div class="muted small">覚醒指標</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Motion Level</div>

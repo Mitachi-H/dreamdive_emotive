@@ -20,6 +20,26 @@ const timelineEl = $('timeline');
 const timelineRangeEl = $('timelineRange');
 const chartCanvas = $('chart');
 
+// --- Timers
+let renewTimer = null;
+let renewEqTimer = null;
+
+function startRenewEq() {
+  if (renewEqTimer) clearInterval(renewEqTimer);
+  renewEqTimer = setInterval(async () => {
+    try {
+      await api.post('/api/stream/eq/renew', { ttlMs: 90_000 });
+    } catch (_) {}
+  }, 30_000);
+}
+
+function stopRenewEq() {
+  if (renewEqTimer) {
+    clearInterval(renewEqTimer);
+    renewEqTimer = null;
+  }
+}
+
 // --- Constants
 const EPOCH_SEC = 30;
 const HOP_SEC = 10; // Increased from 5 to reduce classification frequency
@@ -30,18 +50,28 @@ const TIMELINE_WINDOW_SEC = 3600; // 1 hour
 let powLabels = [];
 let motLabels = [];
 let devLabels = [];
+let eqLabels = [];
 
 const buffers = {
   pow: [],
   mot: [],
-  fac: [],
+  eq: []
 };
 
 let devSignal = { t: 0, v: NaN };
+let eqOverall = NaN, srq = NaN, devOverall = NaN;
 let currentStage = null;
 let stageHistory = [];
 let lastStepAt = 0;
 let sessionStartTime = null;
+
+// --- Quality gate functions
+function isPoorQuality() {
+  if (isFinite(eqOverall) && eqOverall < 30) return true;
+  if (srq === -1 || (isFinite(srq) && srq < 0.7)) return true;
+  if (isFinite(devOverall) && devOverall < 25) return true; // 補助
+  return false;
+}
 
 // --- Utilities
 function nowSec() {
@@ -73,90 +103,68 @@ function formatDuration(seconds) {
   return `${mins}m ${secs}s`;
 }
 
-// --- Sleep stage analysis (Based on AASM constraints with free API limitations)
-function bandsFromPowArray(arr) {
-  if (!arr.length || !powLabels.length) return {};
-  
-  // Aggregate by bands across sensors (theta: 4-8Hz, alpha: 8-12Hz, beta: 12-30Hz)
-  const bands = { theta: [], alpha: [], beta: [], lowBeta: [], highBeta: [] };
-  
-  for (let i = 0; i < powLabels.length; i++) {
-    const label = powLabels[i];
-    const value = arr[i];
-    if (typeof value !== 'number' || !isFinite(value)) continue;
-    
-    if (label.includes('theta')) bands.theta.push(value);
-    else if (label.includes('alpha')) bands.alpha.push(value);
-    else if (label.includes('beta')) {
-      bands.beta.push(value);
-      // Distinguish low beta (12-20Hz) vs high beta (20-30Hz) if possible
-      if (label.includes('lowBeta') || label.includes('low_beta')) bands.lowBeta.push(value);
-      else if (label.includes('highBeta') || label.includes('high_beta')) bands.highBeta.push(value);
-      else {
-        // If no distinction, split evenly
-        bands.lowBeta.push(value * 0.6);
-        bands.highBeta.push(value * 0.4);
-      }
-    }
+// --- Sleep stage analysis (Wake/Sleep binary classification with Registered Developer streams only)
+function featuresFromPow(arr, labels) {
+  // センサ別に格納 (AF3/theta, AF3/alpha, AF3/betaL, AF3/betaH format)
+  const perSensor = new Map(); // sensor -> {theta, alpha, betaL, betaH, gamma}
+  for (let i = 0; i < labels.length; i++) {
+    const m = labels[i].match(/^([^/]+)\/(theta|alpha|betaL|betaH|gamma)$/i);
+    const v = Number(arr[i]);
+    if (!m || !isFinite(v)) continue;
+    const sensor = m[1], band = m[2];
+    if (!perSensor.has(sensor)) perSensor.set(sensor, {theta:0, alpha:0, betaL:0, betaH:0, gamma:0});
+    perSensor.get(sensor)[band] += v;
   }
-  
-  const theta = avg(bands.theta);
-  const alpha = avg(bands.alpha);
-  const beta = avg(bands.beta);
-  const lowBeta = avg(bands.lowBeta);
-  const highBeta = avg(bands.highBeta);
-  
-  // Calculate relative powers
-  const totalPower = theta + alpha + beta;
-  const betaRel = isFinite(beta) && totalPower > 0 ? beta / totalPower : NaN;
-  const alphaRel = isFinite(alpha) && totalPower > 0 ? alpha / totalPower : NaN;
-  const thetaRel = isFinite(theta) && totalPower > 0 ? theta / totalPower : NaN;
-  
-  // Key ratios for sleep staging
-  const ratioTA = isFinite(theta) && isFinite(alpha) && alpha > 0 ? theta / alpha : NaN;
-  const ratioTB = isFinite(theta) && isFinite(beta) && beta > 0 ? theta / beta : NaN;
-  
-  // Pseudo-delta indicator (very low freq estimation from theta dominance)
-  const pseudoDelta = isFinite(theta) && isFinite(ratioTA) && ratioTA > 3 ? theta * 1.5 : 0;
-  
-  return { 
-    theta, alpha, beta, lowBeta, highBeta,
-    betaRel, alphaRel, thetaRel,
-    ratioTA, ratioTB, pseudoDelta,
-    totalPower
-  };
+
+  // 各センサで相対化（gammaは除外で安定判定）
+  const rels = [];
+  const ratios = [];
+  perSensor.forEach(b => {
+    const beta = b.betaL + b.betaH;
+    const denom = b.theta + b.alpha + beta; // gamma除外
+    if (denom <= 0) return;
+    const thetaRel = b.theta / denom;
+    const alphaRel = b.alpha / denom;
+    const betaRel  = beta / denom;
+    rels.push({thetaRel, alphaRel, betaRel});
+    if (b.alpha > 0) ratios.push(b.theta / b.alpha);
+  });
+
+  const avg = (a, k) => a.length ? a.reduce((s, x) => s + x[k], 0) / a.length : NaN;
+  const thetaRel = avg(rels, 'thetaRel');
+  const alphaRel = avg(rels, 'alphaRel');
+  const betaRel  = avg(rels, 'betaRel');
+  const ratioTA  = ratios.length ? ratios.reduce((s, x) => s + x, 0) / ratios.length : NaN;
+
+  return { thetaRel, alphaRel, betaRel, ratioTA };
 }
 
-function computeMotionRmsAt(tCenter) {
-  const halfWin = EPOCH_SEC / 2;
-  const relevant = buffers.mot.filter(s => 
-    Math.abs(s.t - tCenter) <= halfWin && isFinite(s.accMag)
-  );
-  
-  console.log('[sleepstage] computeMotionRmsAt:', { 
-    tCenter, 
-    totalBufferSize: buffers.mot.length, 
-    relevantSize: relevant.length,
-    recentSamples: buffers.mot.slice(-5).map(s => ({ t: s.t, accMag: s.accMag }))
-  });
-  
-  if (relevant.length < 5) {
-    console.log('[sleepstage] computeMotionRmsAt: insufficient data, returning NaN');
-    return NaN;
+// --- EMA 平滑化（半減期 ~12s）
+const emaState = { thetaRel: NaN, alphaRel: NaN, betaRel: NaN, ratioTA: NaN, lastT: 0 };
+function emaUpdate(obj, t, halfLifeSec = 12) {
+  const dt = Math.max(0.001, t - (emaState.lastT || t)); // 秒
+  const k  = Math.exp(-Math.log(2) * dt / halfLifeSec);  // 残存率
+  for (const kf of ['thetaRel', 'alphaRel', 'betaRel', 'ratioTA']) {
+    const x = obj[kf];
+    if (!isFinite(x)) continue;
+    const prev = emaState[kf];
+    emaState[kf] = isFinite(prev) ? (k * prev + (1 - k) * x) : x;
   }
+  emaState.lastT = t;
+  return { thetaRel: emaState.thetaRel, alphaRel: emaState.alphaRel, betaRel: emaState.betaRel, ratioTA: emaState.ratioTA };
+}
+
+function motionAt(tCenter, epochSec = 30) {
+  const half = epochSec / 2;
+  const win = buffers.mot.filter(s => Math.abs(s.t - tCenter) <= half && isFinite(s.accMag));
+  if (win.length < 5) return NaN;
   
-  const mags = relevant.map(s => s.accMag);
-  const baseline = median(mags);
-  const deviations = mags.map(m => Math.abs(m - baseline));
-  const rms = Math.sqrt(avg(deviations.map(d => d * d)));
+  const mags = win.map(s => s.accMag);
+  const med = mags.slice().sort((a, b) => a - b)[Math.floor(mags.length / 2)];
+  const rms = Math.sqrt(mags.reduce((s, m) => { const d = m - med; return s + d * d; }, 0) / mags.length);
+  const recentPeak = Math.max(...mags.slice(-Math.min(10, mags.length)));
   
-  // Relative to recent peak
-  const recentPeak = Math.max(...mags.slice(-10));
-  const result = recentPeak > 0 ? rms / recentPeak : rms;
-  
-  console.log('[sleepstage] computeMotionRmsAt result:', { baseline, rms, recentPeak, result });
-  
-  return result;
+  return recentPeak > 0 ? rms / recentPeak : rms;
 }
 
 function computeWindowFeatures(now) {
@@ -164,234 +172,149 @@ function computeWindowFeatures(now) {
   const tCenter = now - halfWin;
   
   const powWin = buffers.pow.filter(s => Math.abs(s.t - tCenter) <= halfWin);
+  const eqWin = buffers.eq.filter(s => Math.abs(s.t - tCenter) <= halfWin);
   
   console.log('[sleepstage] computeWindowFeatures:', {
     tCenter,
     powWindowSize: powWin.length,
-    totalPowBuffer: buffers.pow.length,
+    eqWindowSize: eqWin.length,
     recentPowSamples: buffers.pow.slice(-3).map(s => ({
       t: s.t,
-      ratioTA: isFinite(s.ratioTA) ? s.ratioTA.toFixed(3) : 'NaN',
+      thetaRel: isFinite(s.thetaRel) ? s.thetaRel.toFixed(3) : 'NaN',
+      alphaRel: isFinite(s.alphaRel) ? s.alphaRel.toFixed(3) : 'NaN',
       betaRel: isFinite(s.betaRel) ? s.betaRel.toFixed(3) : 'NaN'
     }))
   });
   
-  if (powWin.length < 3) {
-    console.log('[sleepstage] computeWindowFeatures: insufficient pow data, returning NaN features');
-    return { 
-      ratioTA: NaN, betaRel: NaN, alphaRel: NaN, thetaRel: NaN,
-      motionRel: NaN, devSig: NaN, eyeMovementRate: NaN,
-      pseudoDelta: NaN, ratioTB: NaN
-    };
-  }
+  // Get latest power features (already EMA smoothed)
+  const lastPow = powWin[powWin.length - 1];
   
-  const avgFeatures = {
-    ratioTA: avg(powWin.map(s => s.ratioTA).filter(v => isFinite(v))),
-    betaRel: avg(powWin.map(s => s.betaRel).filter(v => isFinite(v))),
-    alphaRel: avg(powWin.map(s => s.alphaRel).filter(v => isFinite(v))),
-    thetaRel: avg(powWin.map(s => s.thetaRel).filter(v => isFinite(v))),
-    pseudoDelta: avg(powWin.map(s => s.pseudoDelta).filter(v => isFinite(v))),
-    ratioTB: avg(powWin.map(s => s.ratioTB).filter(v => isFinite(v))),
+  // Get latest EQ features
+  const lastEq = eqWin[eqWin.length - 1];
+  
+  // Compute motion for this time window
+  const motionRel = motionAt(tCenter, EPOCH_SEC);
+  
+  // Get current quality indicators
+  const devSig = devSignal?.v || NaN;
+  const eqOverall = lastEq?.overall || NaN;
+  const eqSampleRate = lastEq?.sampleRateQuality || NaN;
+  
+  return lastPow ? { 
+    ...lastPow, 
+    motionRel, 
+    devSig,
+    eqOverall,
+    eqSampleRate
+  } : { 
+    thetaRel: NaN, 
+    alphaRel: NaN, 
+    betaRel: NaN, 
+    motionRel: NaN, 
+    devSig: NaN,
+    eqOverall: NaN,
+    eqSampleRate: NaN
   };
-  
-  const motionRel = computeMotionRmsAt(tCenter);
-  const devSig = isFinite(devSignal.v) && (now - devSignal.t) < 10 ? devSignal.v : NaN;
-  
-  // Compute eye movement rate from FAC stream (for REM detection)
-  const facWin = buffers.fac.filter(s => Math.abs(s.t - tCenter) <= halfWin);
-  const eyeEvents = facWin.filter(s => s.eyeEvent).length;
-  const eyeMovementRate = facWin.length > 0 ? eyeEvents / facWin.length : 0;
-  
-  return { ...avgFeatures, motionRel, devSig, eyeMovementRate };
 }
 
-function classifySleepStage(features, now) {
-  const { 
-    ratioTA, betaRel, alphaRel, thetaRel, motionRel, devSig, 
-    eyeMovementRate, pseudoDelta, ratioTB 
-  } = features;
-  
-  // Enhanced debugging for classification
-  console.log('[sleepstage] classifySleepStage input features:', {
-    ratioTA: isFinite(ratioTA) ? ratioTA.toFixed(3) : 'NaN',
-    betaRel: isFinite(betaRel) ? betaRel.toFixed(3) : 'NaN',
-    alphaRel: isFinite(alphaRel) ? alphaRel.toFixed(3) : 'NaN',
-    thetaRel: isFinite(thetaRel) ? thetaRel.toFixed(3) : 'NaN',
-    motionRel: isFinite(motionRel) ? motionRel.toFixed(3) : 'NaN',
-    devSig: isFinite(devSig) ? devSig.toFixed(3) : 'NaN',
-    eyeMovementRate: isFinite(eyeMovementRate) ? eyeMovementRate.toFixed(3) : 'NaN',
-    pseudoDelta: isFinite(pseudoDelta) ? pseudoDelta.toFixed(3) : 'NaN'
-  });
-  
-  // Signal quality check
-  if (isFinite(devSig) && devSig < 0.6) {
-    console.log('[sleepstage] Classification: poor_quality (devSig < 0.6)');
-    return { label: 'poor_quality', conf: 0.0 };
+// --- Wake/Sleep Binary Classification
+const HYST = {
+  toSleep: { thetaRel: 0.35, ratioTA: 1.30, alphaRel: 0.28, betaRel: 0.28, motion: 0.35 },
+  toWake:  { thetaRel: 0.30, ratioTA: 1.10, alphaRel: 0.33, betaRel: 0.33, motion: 0.45 },
+};
+let lastBinaryLabel = null, binaryStageStartTime = 0;
+const MIN_STAGE_SEC = 20;
+
+function classifyWakeSleep(feat, now) {
+  if (isPoorQuality()) {
+    console.log('[sleepstage] Classification: poor_quality (quality gate failed)');
+    return { label: 'poor_quality', conf: 0 };
   }
-  
-  if (!isFinite(ratioTA) || !isFinite(betaRel)) {
+
+  const { thetaRel, alphaRel, betaRel, ratioTA, motionRel } = feat;
+  if (![thetaRel, alphaRel, betaRel, ratioTA].every(isFinite)) {
     console.log('[sleepstage] Classification: unknown (missing key features)');
-    return { label: 'unknown', conf: 0.0 };
+    return { label: 'unknown', conf: 0 };
   }
-  
-  let label = 'unknown';
-  let conf = 0.0;
-  
-  // AASM-inspired classification with free API constraints
-  console.log('[sleepstage] Starting classification logic...');
-  
-  // 1. Wake detection (alpha dominant, high motion or high beta)
-  if (alphaRel > 0.35 && (motionRel > 0.3 || betaRel > 0.4)) { // Made more conservative
-    label = 'Wake';
-    conf = Math.min(0.95, 0.7 + Math.max(alphaRel - 0.35, betaRel - 0.4) * 0.5);
-    console.log('[sleepstage] Classification: Wake', {
-      condition: 'alphaRel > 0.35 && (motionRel > 0.3 || betaRel > 0.4)',
-      alphaRel, motionRel, betaRel, conf
-    });
-  }
-  // 2. Deep_candidate (pseudo-delta high, very low beta, minimal motion)
-  else if (pseudoDelta > 0 && betaRel < 0.12 && // Made more strict
-           (isNaN(motionRel) || motionRel < 0.15) && ratioTA > 3.5) { // Made more strict
-    label = 'Deep_candidate';
-    conf = Math.min(0.85, 0.5 + (ratioTA - 3.5) * 0.1 + (0.12 - betaRel) * 2);
-    console.log('[sleepstage] Classification: Deep_candidate', {
-      condition: 'pseudoDelta > 0 && betaRel < 0.12 && motionRel < 0.15 && ratioTA > 3.5',
-      pseudoDelta, betaRel, motionRel, ratioTA, conf
-    });
-  }
-  // 3. REM_candidate (low motion + eye movements + moderate beta)
-  else if ((isNaN(motionRel) || motionRel < 0.25) && 
-           eyeMovementRate > 0.15 && betaRel > 0.3 && betaRel < 0.6) { // Made more strict
-    label = 'REM_candidate';
-    conf = Math.min(0.80, 0.4 + eyeMovementRate * 2 + (betaRel - 0.3) * 1.5);
-    console.log('[sleepstage] Classification: REM_candidate', {
-      condition: 'motionRel < 0.25 && eyeMovementRate > 0.15 && betaRel 0.3-0.6',
-      motionRel, eyeMovementRate, betaRel, conf
-    });
-  }
-  // 4. Light_NREM_candidate (theta dominance, low motion, moderate beta)
-  else if (ratioTA > 2.0 && betaRel < 0.35 && // Made more strict
-           (isNaN(motionRel) || motionRel < 0.3)) {
-    label = 'Light_NREM_candidate';
-    conf = Math.min(0.75, 0.4 + (ratioTA - 2.0) * 0.3 + (0.35 - betaRel) * 0.8);
-    console.log('[sleepstage] Classification: Light_NREM_candidate', {
-      condition: 'ratioTA > 2.0 && betaRel < 0.35 && motionRel < 0.3',
-      ratioTA, betaRel, motionRel, conf
-    });
-  }
-  // 5. Fallback based on motion and basic ratios
-  else if (isFinite(motionRel) && motionRel > 0.5) {
-    label = 'Wake';
-    conf = 0.6;
-    console.log('[sleepstage] Classification: Wake (fallback - high motion)', {
-      condition: 'motionRel > 0.5',
-      motionRel, conf
-    });
-  }
-  else if (ratioTA > 1.2) {
-    label = 'Light_NREM_candidate';
-    conf = 0.3;
-    console.log('[sleepstage] Classification: Light_NREM_candidate (fallback - theta dominant)', {
-      condition: 'ratioTA > 1.2',
-      ratioTA, conf
-    });
-  }
-  else {
-    label = 'Wake';
-    conf = 0.3;
-    console.log('[sleepstage] Classification: Wake (default fallback)', {
-      condition: 'default',
-      conf
-    });
-  }
-  
-  // Apply stage transition constraints and minimum duration
-  const constrainedStage = applyStageConstraints(label, conf, now);
-  
-  console.log('[sleepstage] Final classification result:', {
-    originalLabel: label,
-    originalConf: conf.toFixed(3),
-    finalLabel: constrainedStage.label,
-    finalConf: constrainedStage.conf.toFixed(3),
-    wasConstrained: label !== constrainedStage.label
+
+  console.log('[sleepstage] Classification features:', {
+    thetaRel: thetaRel.toFixed(3),
+    alphaRel: alphaRel.toFixed(3),
+    betaRel: betaRel.toFixed(3),
+    ratioTA: ratioTA.toFixed(3),
+    motionRel: isFinite(motionRel) ? motionRel.toFixed(3) : 'NaN',
+    lastLabel: lastBinaryLabel
   });
-  
-  return constrainedStage;
+
+  const TH = (lastBinaryLabel === 'Sleep') ? HYST.toWake : HYST.toSleep;
+
+  const wakeScore =
+    (alphaRel > TH.alphaRel ? 1 : 0) +
+    (betaRel  > TH.betaRel  ? 1 : 0) +
+    (isFinite(motionRel) && motionRel > TH.motion ? 1 : 0);
+
+  const sleepScore =
+    (thetaRel > TH.thetaRel ? 1 : 0) +
+    (ratioTA  > TH.ratioTA  ? 1 : 0) +
+    ((isNaN(motionRel) || motionRel < TH.motion) ? 1 : 0) +
+    (alphaRel < TH.alphaRel ? 1 : 0) +
+    (betaRel  < TH.betaRel  ? 1 : 0);
+
+  console.log('[sleepstage] Scoring:', {
+    wakeScore,
+    sleepScore,
+    thresholds: TH
+  });
+
+  let newLabel, conf = 0.4;
+  if (sleepScore >= 3 && wakeScore <= 1) {
+    newLabel = 'Sleep'; 
+    conf = Math.min(0.95, 0.5 + 0.1 * (sleepScore - 3));
+  } else if (wakeScore >= 2 && sleepScore <= 2) {
+    newLabel = 'Wake';  
+    conf = Math.min(0.95, 0.5 + 0.2 * (wakeScore - 2));
+  } else {
+    newLabel = lastBinaryLabel || 'Wake';
+    console.log('[sleepstage] Ambiguous zone - maintaining previous state');
+  }
+
+  // 最小継続時間
+  if (!lastBinaryLabel) {
+    lastBinaryLabel = newLabel; 
+    binaryStageStartTime = now;
+    console.log('[sleepstage] First classification:', newLabel);
+  } else {
+    const elapsed = now - binaryStageStartTime;
+    if (elapsed < MIN_STAGE_SEC && newLabel !== 'unknown' && newLabel !== 'poor_quality') {
+      console.log('[sleepstage] Minimum duration enforcement:', {
+        elapsed: elapsed.toFixed(1),
+        minimum: MIN_STAGE_SEC,
+        keeping: lastBinaryLabel
+      });
+      newLabel = lastBinaryLabel; // 固定
+    } else if (newLabel !== lastBinaryLabel) {
+      console.log('[sleepstage] Stage transition:', {
+        from: lastBinaryLabel,
+        to: newLabel,
+        duration: elapsed.toFixed(1)
+      });
+      lastBinaryLabel = newLabel; 
+      binaryStageStartTime = now;
+    }
+  }
+
+  console.log('[sleepstage] Final result:', {
+    label: newLabel,
+    confidence: conf.toFixed(3)
+  });
+
+  return { label: newLabel, conf };
 }
 
 // Stage transition constraints based on sleep physiology
 let lastValidStage = null;
 let stageStartTime = null;
 const MIN_STAGE_DURATION = 30; // Increased from 20 to 30 seconds for more stability
-
-function applyStageConstraints(newLabel, newConf, now) {
-  // Initialize if first classification
-  if (!lastValidStage) {
-    lastValidStage = { label: newLabel, conf: newConf, t: now };
-    stageStartTime = now;
-    console.log('[sleepstage] Stage constraints: First classification', { newLabel, newConf });
-    return { label: newLabel, conf: newConf };
-  }
-  
-  const timeSinceStageStart = now - stageStartTime;
-  const currentLabel = lastValidStage.label;
-  
-  console.log('[sleepstage] Stage constraints input:', {
-    currentLabel,
-    newLabel,
-    timeSinceStageStart: timeSinceStageStart.toFixed(1),
-    minDuration: MIN_STAGE_DURATION,
-    newConf: newConf.toFixed(3)
-  });
-  
-  // Enforce minimum stage duration (except for poor quality)
-  if (timeSinceStageStart < MIN_STAGE_DURATION && 
-      newLabel !== 'poor_quality' && 
-      currentLabel !== 'unknown') {
-    console.log('[sleepstage] Stage constraints: Enforcing minimum duration', {
-      action: 'keeping current stage',
-      reason: `duration ${timeSinceStageStart.toFixed(1)}s < ${MIN_STAGE_DURATION}s`
-    });
-    return { label: currentLabel, conf: lastValidStage.conf };
-  }
-  
-  // Physiologically invalid transitions
-  const invalidTransitions = [
-    ['Wake', 'REM_candidate'],           // Can't go directly from Wake to REM
-    ['Wake', 'Deep_candidate'],          // Usually need Light NREM first
-    ['Deep_candidate', 'Wake'],          // Deep to Wake is rare without Light
-    ['REM_candidate', 'Deep_candidate'], // REM to Deep is uncommon
-  ];
-  
-  for (const [from, to] of invalidTransitions) {
-    if (currentLabel === from && newLabel === to && newConf < 0.8) {
-      // If confidence is very high, allow the transition
-      // Otherwise, transition through Light_NREM_candidate
-      if (newLabel === 'REM_candidate' || newLabel === 'Deep_candidate') {
-        console.log('[sleepstage] Stage constraints: Invalid transition blocked', {
-          from: currentLabel,
-          to: newLabel,
-          reason: 'physiologically invalid',
-          redirectedTo: 'Light_NREM_candidate'
-        });
-        return { label: 'Light_NREM_candidate', conf: Math.max(0.4, newConf * 0.7) };
-      }
-    }
-  }
-  
-  // Accept the new stage
-  if (newLabel !== currentLabel) {
-    stageStartTime = now;
-    console.log('[sleepstage] Stage constraints: Stage transition accepted', {
-      from: currentLabel,
-      to: newLabel,
-      newDuration: 0
-    });
-  }
-  
-  lastValidStage = { label: newLabel, conf: newConf, t: now };
-  return { label: newLabel, conf: newConf };
-}
 
 // --- Chart rendering
 const chart = (() => {
@@ -512,9 +435,7 @@ const chart = (() => {
     
     const stageColors = {
       'Wake': '#ef4444',
-      'Light_NREM_candidate': '#22c55e',
-      'REM_candidate': '#06b6d4',
-      'Deep_candidate': '#3b82f6',
+      'Sleep': '#3b82f6',
       'unknown': '#9ca3af',
       'poor_quality': '#f59e0b'
     };
@@ -579,9 +500,7 @@ function updateTimeline() {
   
   const stageColors = {
     'Wake': '#ef4444',
-    'Light_NREM_candidate': '#22c55e',
-    'REM_candidate': '#06b6d4',
-    'Deep_candidate': '#3b82f6',
+    'Sleep': '#3b82f6',
     'unknown': '#9ca3af',
     'poor_quality': '#f59e0b'
   };
@@ -620,16 +539,14 @@ function tick() {
   try {
     if (now - lastStepAt >= HOP_SEC) {
       const features = computeWindowFeatures(now);
-      const { label, conf } = classifySleepStage(features, now);
+      const { label, conf } = classifyWakeSleep(features, now);
       
       lastStepAt = now;
       
       // Update current stage display
       const stageClasses = {
         'Wake': 'stage-wake',
-        'Light_NREM_candidate': 'stage-light',
-        'REM_candidate': 'stage-rem',
-        'Deep_candidate': 'stage-deep',
+        'Sleep': 'stage-sleep',
         'unknown': 'stage-unknown',
         'poor_quality': 'stage-unknown'
       };
@@ -638,7 +555,8 @@ function tick() {
       
       // Display stage with appropriate labeling
       const displayLabel = label === 'poor_quality' ? 'Poor Signal' :
-                          label.replace('_candidate', ' (candidate)').replace('_', ' ');
+                          label === 'Sleep' ? 'Sleep' :
+                          label === 'Wake' ? 'Wake' : 'Unknown';
       currentStageEl.querySelector('.status').textContent = displayLabel;
       confidenceEl.textContent = conf > 0 ? `Confidence: ${(conf * 100).toFixed(0)}%` : '';
       
@@ -653,8 +571,8 @@ function tick() {
         durationEl.textContent = 'Duration: 0s';
       }
       
-      // Update metrics display with enhanced features
-      thetaAlphaRatioEl.textContent = isFinite(features.ratioTA) ? features.ratioTA.toFixed(2) : '-';
+      // Update metrics display for binary classification
+      thetaAlphaRatioEl.textContent = isFinite(features.thetaRel) ? features.thetaRel.toFixed(2) : '-';
       betaRelEl.textContent = isFinite(features.betaRel) ? features.betaRel.toFixed(2) : '-';
       motionLevelEl.textContent = isFinite(features.motionRel) ? features.motionRel.toFixed(2) : '-';
       console.log('[sleepstage] tick: motion level updated:', features.motionRel);
@@ -718,14 +636,40 @@ const ws = wsConnect({
         devLabels = payload.labels;
         console.log('[sleepstage] dev labels received:', devLabels);
       }
+      if (payload.streamName === 'eq' && Array.isArray(payload.labels)) {
+        eqLabels = payload.labels;
+        console.log('[sleepstage] eq labels received:', eqLabels);
+      }
     },
     pow: (payload) => {
       const arr = payload?.pow || [];
       if (!arr.length || !powLabels.length) return;
       
       const t = payload.time || nowSec();
-      const bands = bandsFromPowArray(arr);
-      buffers.pow.push({ t, ...bands });
+      
+      // Extract power features using new featuresFromPow function
+      const features = featuresFromPow(arr, powLabels);
+      
+      // Update EMA for features
+      emaUpdate('thetaRel', features.thetaRel, t);
+      emaUpdate('alphaRel', features.alphaRel, t);
+      emaUpdate('betaRel', features.betaLRel + features.betaHRel, t); // Combined beta
+      
+      // Store both raw bands and relative features for backward compatibility
+      buffers.pow.push({ 
+        t, 
+        theta: features.theta,
+        alpha: features.alpha,
+        betaL: features.betaL,
+        betaH: features.betaH,
+        gamma: features.gamma,
+        // Relative power features
+        thetaRel: features.thetaRel,
+        alphaRel: features.alphaRel,
+        betaLRel: features.betaLRel,
+        betaHRel: features.betaHRel,
+        betaRel: features.betaLRel + features.betaHRel
+      });
       
       pruneBuffer(buffers.pow, nowSec() - CHART_WINDOW_SEC);
     },
@@ -768,6 +712,28 @@ const ws = wsConnect({
         devSignal = { t, v: signal };
       }
     },
+    eq: (payload) => {
+      const arr = payload?.eq || [];
+      if (!arr.length || !eqLabels.length) return;
+      
+      const t = payload.time || nowSec();
+      
+      // Parse EQ values based on labels
+      const overallIdx = eqLabels.indexOf('OVERALL');
+      const sampleRateIdx = eqLabels.indexOf('SAMPLE_RATE_QUALITY');
+      
+      const overall = overallIdx >= 0 ? Number(arr[overallIdx]) : NaN;
+      const sampleRateQuality = sampleRateIdx >= 0 ? Number(arr[sampleRateIdx]) : NaN;
+      
+      if (isFinite(overall)) {
+        buffers.eq.push({ 
+          t, 
+          overall: clamp(overall, 0, 1),
+          sampleRateQuality: isFinite(sampleRateQuality) ? clamp(sampleRateQuality, 0, 1) : overall
+        });
+        pruneBuffer(buffers.eq, nowSec() - CHART_WINDOW_SEC);
+      }
+    },
     fac: (payload) => {
       const arr = payload?.fac || [];
       const t = payload.time || nowSec();
@@ -780,8 +746,6 @@ const ws = wsConnect({
 });
 
 // --- Stream management
-let renewTimer = null;
-
 function startRenewPow() {
   if (renewTimer) clearInterval(renewTimer);
   renewTimer = setInterval(async () => {
@@ -805,10 +769,12 @@ startBtn.addEventListener('click', async () => {
       api.stream.start('pow'),
       api.stream.start('mot'),
       api.stream.start('dev'),
+      api.stream.start('eq'),
       api.stream.start('fac'),
     ]);
     
     startRenewPow();
+    startRenewEq();
     sessionStartTime = nowSec();
     stageHistory = [];
     currentStage = null;
@@ -826,11 +792,13 @@ startBtn.addEventListener('click', async () => {
 stopBtn.addEventListener('click', async () => {
   try {
     stopRenewPow();
+    stopRenewEq();
     
     await Promise.allSettled([
       api.stream.stop('pow'),
       api.stream.stop('mot'),
       api.stream.stop('dev'),
+      api.stream.stop('eq'),
       api.stream.stop('fac'),
     ]);
     
