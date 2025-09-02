@@ -19,6 +19,15 @@
       .stage-wake { border-color: #ef4444; background: #fef2f2; }
       .stage-sleep { border-color: #3b82f6; background: #eff6ff; }
       .stage-unknown { border-color: #9ca3af; background: #f9fafb; }
+      .stage-analyzing { 
+        border-color: #f59e0b; 
+        background: #fffbeb; 
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
       .metrics-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -96,6 +105,9 @@
             <div class="muted small" style="margin-top: 4px;">
               分類ラベル: Wake | Sleep
             </div>
+            <div id="probabilityInfo" class="muted small" style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+              確率: - | 閾値: Sleep≥70%, Wake≤30%
+            </div>
           </div>
         </div>
       </section>
@@ -104,9 +116,9 @@
         <h3>Sleep-related Metrics (Registered Developer API)</h3>
         <div class="metrics-grid">
           <div class="metric-card">
-            <div class="metric-title">Theta Relative Power</div>
+            <div class="metric-title">Theta/Alpha Ratio</div>
             <div id="thetaAlphaRatio" class="metric-value">-</div>
-            <div class="muted small">睡眠指標</div>
+            <div class="muted small">睡眠指標 (θ/α)</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Beta Relative Power</div>
@@ -119,9 +131,9 @@
             <div class="muted small">体動レベル</div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">Signal Quality</div>
+            <div class="metric-title">Signal Quality (0–100)</div>
             <div id="signalQuality" class="metric-value">-</div>
-            <div class="muted small">電極接触品質</div>
+            <div class="muted small">Overall EEG Quality</div>
           </div>
           <div class="metric-card">
             <div class="metric-title">Total Sleep Time (estimated)</div>

@@ -12,11 +12,23 @@ const confidenceEl = $('confidence');
 const durationEl = $('duration');
 const qualityEl = $('quality');
 const timestampEl = $('timestamp');
+const probabilityInfoEl = $('probabilityInfo');
 const thetaAlphaRatioEl = $('thetaAlphaRatio');
 const betaRelEl = $('betaRel');
 const motionLevelEl = $('motionLevel');
 const signalQualityEl = $('signalQuality');
 const totalSleepTimeEl = $('totalSleepTime');
+
+// Debug DOM element availability
+console.log('[sleepstage] DOM Elements Check:', {
+  startBtn: !!startBtn,
+  stopBtn: !!stopBtn,
+  headsetIdInput: !!headsetIdInput,
+  wsStatus: !!wsStatus,
+  currentStageEl: !!currentStageEl,
+  startBtnId: startBtn?.id,
+  stopBtnId: stopBtn?.id
+});
 const sleepEfficiencyEl = $('sleepEfficiency');
 const timelineEl = $('timeline');
 const timelineRangeEl = $('timelineRange');
@@ -27,19 +39,13 @@ let renewTimer = null;
 let renewEqTimer = null;
 
 function startRenewEq() {
-  if (renewEqTimer) clearInterval(renewEqTimer);
-  renewEqTimer = setInterval(async () => {
-    try {
-      await api.post('/api/stream/eq/renew', { ttlMs: 90_000 });
-    } catch (_) {}
-  }, 30_000);
+  // EQ stream doesn't need renewal - it's designed to run continuously
+  console.log('[sleepstage] EQ stream renewal not needed - running continuously');
 }
 
 function stopRenewEq() {
-  if (renewEqTimer) {
-    clearInterval(renewEqTimer);
-    renewEqTimer = null;
-  }
+  // EQ stream doesn't use renewal timer
+  console.log('[sleepstage] EQ stream stopped - no renewal timer to clear');
 }
 
 // --- Constants
@@ -58,7 +64,8 @@ let eqLabels = [];
 const buffers = {
   pow: [],
   mot: [],
-  eq: []
+  eq: [],
+  fac: []
 };
 
 let devSignal = { t: 0, v: NaN };
@@ -69,10 +76,16 @@ let lastStepAt = 0;
 let sessionStartTime = null;
 
 // --- Quality gate functions
-function isPoorQuality() {
-  if (isFinite(eqOverall) && eqOverall < 30) return true;
-  if (srq === -1 || (isFinite(srq) && srq < 0.7)) return true;
-  if (isFinite(devOverall) && devOverall < 25) return true; // 補助
+function isPoorQuality(features = null) {
+  // 特徴量が渡された場合はそちらを優先使用
+  const eqOverallToCheck = features?.eqOverall || eqOverall;
+  const eqSampleRateToCheck = features?.eqSampleRate || srq;
+  const devSigToCheck = features?.devSig || devOverall;
+  
+  // 誤判定対策：品質閾値を厳格化
+  if (isFinite(eqOverallToCheck) && eqOverallToCheck < 40) return true; // 30→40に変更
+  if (eqSampleRateToCheck === -1 || (isFinite(eqSampleRateToCheck) && eqSampleRateToCheck < 0.8)) return true; // 0.7→0.8に変更
+  if (isFinite(devSigToCheck) && devSigToCheck < 0.35) return true; // 0.25→0.35に変更
   return false;
 }
 
@@ -231,97 +244,171 @@ function computeWindowFeatures(now) {
 }
 
 // --- Wake/Sleep Binary Classification
-const HYST = {
-  toSleep: { thetaRel: 0.35, ratioTA: 1.30, alphaRel: 0.28, betaRel: 0.28, motion: 0.35 },
-  toWake:  { thetaRel: 0.30, ratioTA: 1.10, alphaRel: 0.33, betaRel: 0.33, motion: 0.45 },
+// ---- Continuous wake/sleep scoring ----------------------------------------
+// 連続確率EMA状態（20秒半減期）
+let scoreEma = { initialized: false, value: null, lastTime: null };
+
+// 基本関数
+function logistic(x) { return 1 / (1 + Math.exp(-x)); }
+
+// 係数は経験則（Virtual Device対策を含む）
+// 誤判定対策：より保守的な係数設定
+const COEF = {
+  bias:   -0.2,   // ベースライン（覚醒寄りに調整）
+  theta:   1.2,   // + θ相対が高いほど眠い（係数を下げて誤判定抑制）
+  ratioTA: 0.5,   // + θ/αが高いほど眠い（係数を下げて誤判定抑制）
+  alpha:  -0.8,   // - α相対が高いほど覚醒寄り（係数を下げて誤判定抑制）
+  beta:   -1.0,   // - β相対が高いほど覚醒寄り（係数を下げて誤判定抑制）
+  motion: -1.5,   // - 動きが大きいと覚醒（動きをより重視）
 };
-let lastBinaryLabel = null, binaryStageStartTime = 0;
-const MIN_STAGE_SEC = 20;
+
+function computeSleepProbability(feat) {
+  const { thetaRel, alphaRel, betaRel, ratioTA, motionRel, devSig, eqOverall } = feat;
+
+  // 欠損は直前値維持（なければ0.5）
+  if (![thetaRel, alphaRel, betaRel, ratioTA].every(isFinite)) {
+    return scoreEma.initialized ? scoreEma.value : 0.5;
+  }
+  
+  // 異常値検出：特徴量が現実的でない場合
+  if (thetaRel < 0 || thetaRel > 1 || alphaRel < 0 || alphaRel > 1 || betaRel < 0 || betaRel > 1) {
+    console.log('[sleepstage] Abnormal feature values detected - using previous value');
+    return scoreEma.initialized ? scoreEma.value : 0.5;
+  }
+  
+  // 信号品質による追加制約
+  if (isFinite(devSig) && devSig < 0.4) {
+    console.log('[sleepstage] Low device signal quality:', devSig.toFixed(3), '- conservative estimate');
+    return scoreEma.initialized ? Math.max(0.3, Math.min(0.7, scoreEma.value)) : 0.5;
+  }
+
+  // motionRel は NaN を 0 と解釈（"動きなし"）
+  const m = isFinite(motionRel) ? motionRel : 0;
+  
+  // 誤判定対策：高い動きがある場合は強制的に覚醒寄りに
+  if (m > 0.5) {
+    console.log('[sleepstage] High motion detected:', m.toFixed(3), '- forcing wake bias');
+    return Math.min(0.4, scoreEma.initialized ? scoreEma.value : 0.4); // 覚醒寄りに強制
+  }
+
+  // 線形結合 → ロジスティック
+  const z =
+    COEF.bias +
+    COEF.theta   * thetaRel +
+    COEF.ratioTA * Math.min(ratioTA, 2.5) + // 外れ値抑制を強化（3.0→2.5）
+    COEF.alpha   * alphaRel +
+    COEF.beta    * betaRel +
+    COEF.motion  * m;
+
+  const probability = logistic(z);
+  
+  // 誤判定対策：極端な確率を制限
+  return Math.max(0.1, Math.min(0.9, probability));
+}
+
+// 時間平滑（半減期 ~20s）
+function emaProb(p, t, halfLifeSec = 20) {
+  const dt = Math.max(0.001, t - (scoreEma.lastTime || t));
+  const k  = Math.exp(-Math.log(2) * dt / halfLifeSec);
+  
+  if (!scoreEma.initialized) {
+    scoreEma.value = p;
+    scoreEma.initialized = true;
+  } else {
+    scoreEma.value = k * scoreEma.value + (1 - k) * p;
+  }
+  
+  scoreEma.lastTime = t;
+  return scoreEma.value;
+}
+
+let lastBinaryLabel = 'Wake', binaryStageStartTime = 0; // ★ デフォルトは覚醒
+const MIN_STAGE_SEC = 30; // 誤判定対策：最小継続時間を30秒に延長
 
 function classifyWakeSleep(feat, now) {
-  if (isPoorQuality()) {
+  // 初期ウォームアップ期間（EMA安定化のため）
+  const warmupSec = 60; // 30秒→60秒に延長
+  if (sessionStartTime && now - sessionStartTime < warmupSec) {
+    console.log('[sleepstage] Warmup period - staying Wake for EMA stabilization');
+    return { label: 'Wake', conf: 0.3, pSleep: 0.3, pWake: 0.7 };
+  }
+
+  if (isPoorQuality(feat)) {
     console.log('[sleepstage] Classification: poor_quality (quality gate failed)');
-    return { label: 'poor_quality', conf: 0 };
+    return { label: 'poor_quality', conf: 0, pSleep: NaN, pWake: NaN };
   }
 
-  const { thetaRel, alphaRel, betaRel, ratioTA, motionRel } = feat;
-  if (![thetaRel, alphaRel, betaRel, ratioTA].every(isFinite)) {
-    console.log('[sleepstage] Classification: unknown (missing key features)');
-    return { label: 'unknown', conf: 0 };
-  }
+  // 連続スコア計算
+  const pRaw   = computeSleepProbability(feat);
+  const pSleep = emaProb(pRaw, now);
+  const pWake  = 1 - pSleep;
 
-  console.log('[sleepstage] Classification features:', {
-    thetaRel: thetaRel.toFixed(3),
-    alphaRel: alphaRel.toFixed(3),
-    betaRel: betaRel.toFixed(3),
-    ratioTA: ratioTA.toFixed(3),
-    motionRel: isFinite(motionRel) ? motionRel.toFixed(3) : 'NaN',
-    lastLabel: lastBinaryLabel
+  console.log('[sleepstage] Continuous scores:', {
+    pRaw: pRaw.toFixed(3),
+    pSleep: pSleep.toFixed(3),
+    pWake: pWake.toFixed(3),
+    thresholds: { up: 0.70, down: 0.30 },
+    currentLabel: lastBinaryLabel,
+    features: {
+      thetaRel: feat.thetaRel?.toFixed(3),
+      alphaRel: feat.alphaRel?.toFixed(3),
+      betaRel: feat.betaRel?.toFixed(3),
+      ratioTA: feat.ratioTA?.toFixed(3),
+      motionRel: isFinite(feat.motionRel) ? feat.motionRel.toFixed(3) : 'NaN'
+    }
   });
 
-  const TH = (lastBinaryLabel === 'Sleep') ? HYST.toWake : HYST.toSleep;
+  // 必要なら最終ラベル（ヒステリシス）
+  // 誤判定対策：より厳格な閾値設定
+  // p>=0.70でSleep、p<=0.30でWake、それ以外は現状維持
+  const up = 0.70, down = 0.30;
+  let label = lastBinaryLabel || 'Wake';
+  if (pSleep >= up) label = 'Sleep';
+  else if (pSleep <= down) label = 'Wake';
 
-  const wakeScore =
-    (alphaRel > TH.alphaRel ? 1 : 0) +
-    (betaRel  > TH.betaRel  ? 1 : 0) +
-    (isFinite(motionRel) && motionRel > TH.motion ? 1 : 0);
-
-  const sleepScore =
-    (thetaRel > TH.thetaRel ? 1 : 0) +
-    (ratioTA  > TH.ratioTA  ? 1 : 0) +
-    ((isNaN(motionRel) || motionRel < TH.motion) ? 1 : 0) +
-    (alphaRel < TH.alphaRel ? 1 : 0) +
-    (betaRel  < TH.betaRel  ? 1 : 0);
-
-  console.log('[sleepstage] Scoring:', {
-    wakeScore,
-    sleepScore,
-    thresholds: TH
-  });
-
-  let newLabel, conf = 0.4;
-  if (sleepScore >= 3 && wakeScore <= 1) {
-    newLabel = 'Sleep'; 
-    conf = Math.min(0.95, 0.5 + 0.1 * (sleepScore - 3));
-  } else if (wakeScore >= 2 && sleepScore <= 2) {
-    newLabel = 'Wake';  
-    conf = Math.min(0.95, 0.5 + 0.2 * (wakeScore - 2));
-  } else {
-    newLabel = lastBinaryLabel || 'Wake';
-    console.log('[sleepstage] Ambiguous zone - maintaining previous state');
-  }
-
-  // 最小継続時間
-  if (!lastBinaryLabel) {
-    lastBinaryLabel = newLabel; 
+  // 最小継続時間の制約
+  if (lastBinaryLabel === 'Wake' && binaryStageStartTime === 0) {
+    // 初回判定の場合
+    lastBinaryLabel = label; 
     binaryStageStartTime = now;
-    console.log('[sleepstage] First classification:', newLabel);
+    console.log('[sleepstage] First classification (continuous):', label, 'pSleep:', pSleep.toFixed(3));
   } else {
     const elapsed = now - binaryStageStartTime;
-    if (elapsed < MIN_STAGE_SEC && newLabel !== 'unknown' && newLabel !== 'poor_quality') {
-      console.log('[sleepstage] Minimum duration enforcement:', {
-        elapsed: elapsed.toFixed(1),
-        minimum: MIN_STAGE_SEC,
-        keeping: lastBinaryLabel
-      });
-      newLabel = lastBinaryLabel; // 固定
-    } else if (newLabel !== lastBinaryLabel) {
-      console.log('[sleepstage] Stage transition:', {
+    if (elapsed < MIN_STAGE_SEC && label !== 'unknown' && label !== 'poor_quality') {
+      if (label !== lastBinaryLabel) {
+        console.log('[sleepstage] Minimum duration enforcement (continuous):', {
+          elapsed: elapsed.toFixed(1),
+          minimum: MIN_STAGE_SEC,
+          keeping: lastBinaryLabel,
+          pSleep: pSleep.toFixed(3)
+        });
+        label = lastBinaryLabel; // 固定
+      }
+    } else if (label !== lastBinaryLabel) {
+      console.log('[sleepstage] Stage transition (continuous):', {
         from: lastBinaryLabel,
-        to: newLabel,
-        duration: elapsed.toFixed(1)
+        to: label,
+        duration: elapsed.toFixed(1),
+        pSleep: pSleep.toFixed(3)
       });
-      lastBinaryLabel = newLabel; 
+      lastBinaryLabel = label; 
       binaryStageStartTime = now;
     }
   }
 
-  console.log('[sleepstage] Final result:', {
-    label: newLabel,
-    confidence: conf.toFixed(3)
+  // 信頼度は「閾値からの距離」を擬似的に
+  const conf = label === 'Sleep'
+    ? Math.min(0.95, (pSleep - 0.5) * 1.6) // 0.5→0, 0.8→0.48
+    : Math.min(0.95, (pWake  - 0.5) * 1.6);
+
+  console.log('[sleepstage] Final result (continuous):', {
+    label,
+    confidence: Math.max(0, conf).toFixed(3),
+    pSleep: pSleep.toFixed(3),
+    pWake: pWake.toFixed(3)
   });
 
-  return { label: newLabel, conf };
+  return { label, conf: Math.max(0, conf), pSleep, pWake };
 }
 
 // Stage transition constraints based on sleep physiology
@@ -458,9 +545,10 @@ const chart = (() => {
       const nextStage = stageHistory[i + 1];
       const endTime = nextStage ? nextStage.t : now;
       
-      if (stage.t >= x0) {
-        const x1 = mapX(stage.t, now);
-        const x2 = mapX(endTime, now);
+      // Show stages that overlap with the chart window
+      if (endTime >= x0 && stage.t <= now) {
+        const x1 = Math.max(pad.l, mapX(stage.t, now));
+        const x2 = Math.min(w - pad.r, mapX(endTime, now));
         const width = Math.max(1, x2 - x1);
         
         ctx.fillStyle = stageColors[stage.label] || '#9ca3af';
@@ -474,28 +562,81 @@ const chart = (() => {
 
 // --- Sleep metrics calculation
 function calculateSleepMetrics() {
-  if (!sessionStartTime || stageHistory.length === 0) return;
+  console.log('[sleepstage] calculateSleepMetrics called:', {
+    sessionStartTime,
+    stageHistoryLength: stageHistory.length,
+    hasElements: {
+      totalSleepTime: !!totalSleepTimeEl,
+      sleepEfficiency: !!sleepEfficiencyEl
+    }
+  });
+  
+  if (!sessionStartTime) {
+    console.log('[sleepstage] No session start time, skipping metrics');
+    return;
+  }
+  
+  if (stageHistory.length === 0) {
+    console.log('[sleepstage] No stage history, resetting metrics to zero');
+    if (totalSleepTimeEl) totalSleepTimeEl.textContent = '0m 0s';
+    if (sleepEfficiencyEl) sleepEfficiencyEl.textContent = '0.0%';
+    return;
+  }
   
   const now = nowSec();
   const totalTime = now - sessionStartTime;
   
-  // Only count Sleep stages (exclude Wake, unknown, poor_quality)
-  const sleepStages = stageHistory.filter(s => 
-    s.label === 'Sleep'
-  );
+  console.log('[sleepstage] Session time info:', {
+    now,
+    sessionStartTime,
+    totalTime: totalTime.toFixed(1),
+    stageCount: stageHistory.length
+  });
   
+  // Calculate total sleep time by iterating through all stages chronologically
   let totalSleepTime = 0;
-  for (let i = 0; i < sleepStages.length; i++) {
-    const stage = sleepStages[i];
-    const nextStage = sleepStages[i + 1];
-    const duration = (nextStage ? nextStage.t : now) - stage.t;
-    totalSleepTime += duration;
+  const sleepStages = [];
+  
+  for (let i = 0; i < stageHistory.length; i++) {
+    const stage = stageHistory[i];
+    const nextStage = stageHistory[i + 1];
+    const endTime = nextStage ? nextStage.t : now;
+    const duration = endTime - stage.t;
+    
+    console.log('[sleepstage] Stage analysis:', {
+      index: i,
+      label: stage.label,
+      startTime: new Date(stage.t * 1000).toLocaleTimeString(),
+      endTime: new Date(endTime * 1000).toLocaleTimeString(),
+      duration: duration.toFixed(1),
+      isSleep: stage.label === 'Sleep'
+    });
+    
+    // Only count Sleep stages (exclude Wake, unknown, poor_quality)
+    if (stage.label === 'Sleep' && duration > 0) {
+      totalSleepTime += duration;
+      sleepStages.push({ start: stage.t, end: endTime, duration });
+    }
   }
   
   const sleepEfficiency = totalTime > 0 ? (totalSleepTime / totalTime) * 100 : 0;
   
-  totalSleepTimeEl.textContent = formatDuration(totalSleepTime);
-  sleepEfficiencyEl.textContent = `${sleepEfficiency.toFixed(1)}%`;
+  console.log('[sleepstage] Metrics calculated:', {
+    totalSleepTime: totalSleepTime.toFixed(1),
+    sleepEfficiency: sleepEfficiency.toFixed(1),
+    sleepStageCount: sleepStages.length,
+    totalTime: totalTime.toFixed(1)
+  });
+  
+  if (totalSleepTimeEl) {
+    totalSleepTimeEl.textContent = formatDuration(totalSleepTime);
+    console.log('[sleepstage] Updated totalSleepTime display:', totalSleepTimeEl.textContent);
+  }
+  
+  if (sleepEfficiencyEl) {
+    sleepEfficiencyEl.textContent = `${sleepEfficiency.toFixed(1)}%`;
+    console.log('[sleepstage] Updated sleepEfficiency display:', sleepEfficiencyEl.textContent);
+  }
 }
 
 // --- Timeline rendering
@@ -552,11 +693,12 @@ function tick() {
   try {
     if (now - lastStepAt >= HOP_SEC) {
       const features = computeWindowFeatures(now);
-      const { label, conf } = classifyWakeSleep(features, now);
+      const result = classifyWakeSleep(features, now);
+      const { label, conf, pSleep, pWake } = result;
       
       lastStepAt = now;
       
-      // Update current stage display
+      // Update current stage display with probability-based styling
       const stageClasses = {
         'Wake': 'stage-wake',
         'Sleep': 'stage-sleep',
@@ -564,32 +706,121 @@ function tick() {
         'poor_quality': 'stage-unknown'
       };
       
-      currentStageEl.className = `stage-card ${stageClasses[label] || 'stage-unknown'}`;
+      // Special styling for low confidence (判定中)
+      let cssClass = stageClasses[label] || 'stage-unknown';
+      if (conf > 0 && conf <= 0.5 && label !== 'poor_quality' && label !== 'unknown') {
+        cssClass = 'stage-analyzing'; // Use analyzing styling for 判定中
+      }
       
-      // Display stage with appropriate labeling
-      const displayLabel = label === 'poor_quality' ? 'Poor Signal' :
-                          label === 'Sleep' ? 'Sleep' :
-                          label === 'Wake' ? 'Wake' : 'Unknown';
-      currentStageEl.querySelector('.status').textContent = displayLabel;
-      confidenceEl.textContent = conf > 0 ? `Confidence: ${(conf * 100).toFixed(0)}%` : '';
+      currentStageEl.className = `stage-card ${cssClass}`;
+      
+      // Apply gradient background based on sleep probability
+      if (isFinite(pSleep)) {
+        const intensity = Math.abs(pSleep - 0.5) * 2; // 0.5=中立で0、0または1で最大
+        const color = pSleep > 0.5 ? 'rgba(59, 130, 246, ' + intensity * 0.3 + ')' // blue for sleep
+                                   : 'rgba(239, 68, 68, ' + intensity * 0.3 + ')';  // red for wake
+        currentStageEl.style.background = color;
+      } else {
+        currentStageEl.style.background = ''; // デフォルト
+      }
+      
+      // Display stage with probability information
+      let displayLabel = label === 'poor_quality' ? 'Poor Signal' :
+                         label === 'Sleep' ? 'Sleep' :
+                         label === 'Wake' ? 'Wake' : 'Unknown';
+      
+      // Show "判定中" if confidence is 40% or lower
+      if (conf > 0 && conf <= 0.4 && label !== 'poor_quality' && label !== 'unknown') {
+        displayLabel = '判定中';
+      }
+      
+      let statusText = displayLabel;
+      if (isFinite(pSleep) && label !== 'poor_quality') {
+        const sleepPercent = Math.round(pSleep * 100);
+        const wakePercent = Math.round(pWake * 100);
+        statusText += ` (S:${sleepPercent}% W:${wakePercent}%)`;
+      }
+      
+      currentStageEl.querySelector('.status').textContent = statusText;
+      
+      // Update confidence display - show "判定中" for low confidence
+      if (conf > 0) {
+        if (conf <= 0.4) {
+          confidenceEl.textContent = '判定中...';
+        } else {
+          confidenceEl.textContent = `Confidence: ${(conf * 100).toFixed(0)}%`;
+        }
+      } else {
+        confidenceEl.textContent = '';
+      }
+      
+      // Update probability information for debugging
+      if (probabilityInfoEl && isFinite(pSleep)) {
+        const sleepPercent = (pSleep * 100).toFixed(1);
+        const wakePercent = (pWake * 100).toFixed(1);
+        const thresholdStatus = pSleep >= 0.70 ? '→Sleep' : pSleep <= 0.30 ? '→Wake' : '維持';
+        probabilityInfoEl.textContent = `確率: S:${sleepPercent}% W:${wakePercent}% | 判定: ${thresholdStatus} | 閾値: Sleep≥70%, Wake≤30%`;
+        
+        // Color coding based on probability
+        if (pSleep >= 0.70) {
+          probabilityInfoEl.style.background = '#dbeafe'; // blue for sleep
+          probabilityInfoEl.style.color = '#1e40af';
+        } else if (pSleep <= 0.30) {
+          probabilityInfoEl.style.background = '#fee2e2'; // red for wake
+          probabilityInfoEl.style.color = '#dc2626';
+        } else {
+          probabilityInfoEl.style.background = '#f3f4f6'; // gray for uncertain
+          probabilityInfoEl.style.color = '#6b7280';
+        }
+      }
       
       // Update stage duration
       if (currentStage && currentStage.label === label) {
+        // Same stage continues - just update duration display
         const duration = now - currentStage.t;
         durationEl.textContent = `Duration: ${formatDuration(duration)}`;
-        currentStage.t = now; // Update end time
+        // Don't modify currentStage.t - it should remain the start time!
       } else {
+        // New stage detected - add to history and create new current stage
+        console.log('[sleepstage] Stage change detected:', {
+          from: currentStage?.label || 'none',
+          to: label,
+          previousDuration: currentStage ? (now - currentStage.t).toFixed(1) + 's' : 'none',
+          stageHistoryLength: stageHistory.length,
+          time: new Date(now * 1000).toLocaleTimeString()
+        });
         currentStage = { label, conf, t: now };
         stageHistory.push(currentStage);
         durationEl.textContent = 'Duration: 0s';
+        
+        console.log('[sleepstage] Stage history updated:', {
+          totalStages: stageHistory.length,
+          recentStages: stageHistory.slice(-5).map(s => ({ 
+            label: s.label, 
+            time: new Date(s.t * 1000).toLocaleTimeString()
+          }))
+        });
       }
       
       // Update metrics display for binary classification
-      thetaAlphaRatioEl.textContent = isFinite(features.thetaRel) ? features.thetaRel.toFixed(2) : '-';
-      betaRelEl.textContent = isFinite(features.betaRel) ? features.betaRel.toFixed(2) : '-';
-      motionLevelEl.textContent = isFinite(features.motionRel) ? features.motionRel.toFixed(2) : '-';
+      thetaAlphaRatioEl.textContent = isFinite(features.ratioTA) ? features.ratioTA.toFixed(3) : '-';
+      betaRelEl.textContent = isFinite(features.betaRel) ? features.betaRel.toFixed(3) : '-';
+      motionLevelEl.textContent = isFinite(features.motionRel) ? features.motionRel.toFixed(3) : '-';
       console.log('[sleepstage] tick: motion level updated:', features.motionRel);
-      signalQualityEl.textContent = isFinite(features.devSig) ? `${(features.devSig * 100).toFixed(0)}%` : '-';
+      
+      // Display Overall EEG Quality (0-100) instead of Device Signal Quality
+      if (isFinite(features.eqOverall)) {
+        signalQualityEl.textContent = `${features.eqOverall.toFixed(0)}`;
+      } else {
+        signalQualityEl.textContent = '-';
+      }
+      
+      console.log('[sleepstage] Metrics updated:', {
+        ratioTA: isFinite(features.ratioTA) ? features.ratioTA.toFixed(3) : 'NaN',
+        betaRel: isFinite(features.betaRel) ? features.betaRel.toFixed(3) : 'NaN',
+        motionRel: isFinite(features.motionRel) ? features.motionRel.toFixed(3) : 'NaN',
+        eqOverall: isFinite(features.eqOverall) ? features.eqOverall.toFixed(1) : 'NaN'
+      });
       
       // Add eye movement rate display if available
       const eyeRateDisplay = isFinite(features.eyeMovementRate) ? 
@@ -597,8 +828,9 @@ function tick() {
       
       timestampEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
       
-      qualityEl.textContent = isFinite(features.devSig) ? 
-        `Signal: ${(features.devSig * 100).toFixed(0)}%${eyeRateDisplay}` : 
+      // Display EEG Overall Quality instead of Device Signal Quality
+      qualityEl.textContent = isFinite(features.eqOverall) ? 
+        `EEG Quality: ${features.eqOverall.toFixed(0)}${eyeRateDisplay}` : 
         eyeRateDisplay.replace(' | ', '');
       
       calculateSleepMetrics();
@@ -613,8 +845,22 @@ function tick() {
   pruneBuffer(buffers.mot, minTime);
   pruneBuffer(buffers.fac, minTime);
   
-  while (stageHistory.length && stageHistory[0].t < minTime) {
+  // Keep stage history for timeline (1 hour), not just chart window (2 minutes)
+  const timelineMinTime = now - TIMELINE_WINDOW_SEC;
+  const stageHistoryBefore = stageHistory.length;
+  while (stageHistory.length && stageHistory[0].t < timelineMinTime) {
     stageHistory.shift();
+  }
+  const stageHistoryAfter = stageHistory.length;
+  
+  // Debug stage history management
+  if (stageHistoryBefore !== stageHistoryAfter) {
+    console.log('[sleepstage] Stage history pruned:', {
+      before: stageHistoryBefore,
+      after: stageHistoryAfter,
+      removed: stageHistoryBefore - stageHistoryAfter,
+      timelineMinTime: new Date(timelineMinTime * 1000).toLocaleTimeString()
+    });
   }
   
   // Update displays
@@ -694,34 +940,45 @@ const ws = wsConnect({
     },
     pow: (payload) => {
       const arr = payload?.pow || [];
-      if (!arr.length || !powLabels.length) return;
+      if (!arr.length || !powLabels.length) {
+        console.log('[sleepstage] pow: skipping - no data or labels', {
+          arrLength: arr.length,
+          labelsLength: powLabels.length
+        });
+        return;
+      }
       
       const t = payload.time || nowSec();
       
       // Extract power features using new featuresFromPow function
       const features = featuresFromPow(arr, powLabels);
+      console.log('[sleepstage] pow: extracted features:', {
+        thetaRel: isFinite(features.thetaRel) ? features.thetaRel.toFixed(3) : 'NaN',
+        alphaRel: isFinite(features.alphaRel) ? features.alphaRel.toFixed(3) : 'NaN',
+        betaRel: isFinite(features.betaRel) ? features.betaRel.toFixed(3) : 'NaN',
+        ratioTA: isFinite(features.ratioTA) ? features.ratioTA.toFixed(3) : 'NaN'
+      });
       
-      // Update EMA for features
-      emaUpdate('thetaRel', features.thetaRel, t);
-      emaUpdate('alphaRel', features.alphaRel, t);
-      emaUpdate('betaRel', features.betaLRel + features.betaHRel, t); // Combined beta
+      // Update EMA for features with correct function signature
+      const emaFeatures = emaUpdate(features, t);
+      console.log('[sleepstage] pow: EMA features:', {
+        thetaRel: isFinite(emaFeatures.thetaRel) ? emaFeatures.thetaRel.toFixed(3) : 'NaN',
+        alphaRel: isFinite(emaFeatures.alphaRel) ? emaFeatures.alphaRel.toFixed(3) : 'NaN',
+        betaRel: isFinite(emaFeatures.betaRel) ? emaFeatures.betaRel.toFixed(3) : 'NaN',
+        ratioTA: isFinite(emaFeatures.ratioTA) ? emaFeatures.ratioTA.toFixed(3) : 'NaN'
+      });
       
       // Store both raw bands and relative features for backward compatibility
       buffers.pow.push({ 
         t, 
-        theta: features.theta,
-        alpha: features.alpha,
-        betaL: features.betaL,
-        betaH: features.betaH,
-        gamma: features.gamma,
-        // Relative power features
-        thetaRel: features.thetaRel,
-        alphaRel: features.alphaRel,
-        betaLRel: features.betaLRel,
-        betaHRel: features.betaHRel,
-        betaRel: features.betaLRel + features.betaHRel
+        // Store EMA-smoothed relative features
+        thetaRel: emaFeatures.thetaRel,
+        alphaRel: emaFeatures.alphaRel,
+        betaRel: emaFeatures.betaRel,
+        ratioTA: emaFeatures.ratioTA
       });
       
+      console.log('[sleepstage] pow: buffer updated, size:', buffers.pow.length);
       pruneBuffer(buffers.pow, nowSec() - CHART_WINDOW_SEC);
     },
     mot: (payload) => {
@@ -802,8 +1059,8 @@ const ws = wsConnect({
       if (isFinite(overall)) {
         buffers.eq.push({ 
           t, 
-          overall: clamp(overall, 0, 1),
-          sampleRateQuality: isFinite(sampleRateQuality) ? clamp(sampleRateQuality, 0, 1) : overall
+          overall: overall, // 0-100スケールを保持
+          sampleRateQuality: isFinite(sampleRateQuality) ? sampleRateQuality : overall / 100
         });
         pruneBuffer(buffers.eq, nowSec() - CHART_WINDOW_SEC);
       }
@@ -821,11 +1078,15 @@ const ws = wsConnect({
 
 // --- WebSocket connection utility
 function waitForWebSocketConnection(timeoutMs = 5000) {
+  console.log('[sleepstage] waitForWebSocketConnection called:', { wsConnected, hasPromise: !!wsConnectionPromise });
+  
   if (wsConnected) {
+    console.log('[sleepstage] WebSocket already connected');
     return Promise.resolve();
   }
   
   if (!wsConnectionPromise) {
+    console.log('[sleepstage] Creating new WebSocket connection promise');
     wsConnectionPromise = {};
     wsConnectionPromise.promise = new Promise((resolve, reject) => {
       wsConnectionPromise.resolve = resolve;
@@ -834,6 +1095,7 @@ function waitForWebSocketConnection(timeoutMs = 5000) {
       // Add timeout to avoid infinite waiting
       setTimeout(() => {
         if (wsConnectionPromise) {
+          console.log('[sleepstage] WebSocket connection timeout');
           wsConnectionPromise.reject(new Error('WebSocket connection timeout'));
           wsConnectionPromise = null;
         }
@@ -863,34 +1125,75 @@ function stopRenewPow() {
 
 // --- Event handlers
 startBtn.addEventListener('click', async () => {
+  console.log('[sleepstage] Start button clicked!', {
+    wsConnected,
+    startBtnExists: !!startBtn,
+    apiExists: !!api,
+    wsStatusText: wsStatus?.textContent
+  });
+  
   try {
     // Wait for WebSocket connection before starting streams
     wsStatus.textContent = 'WS: waiting for connection...';
+    console.log('[sleepstage] Waiting for WebSocket connection...');
     await waitForWebSocketConnection();
     
     const headsetId = headsetIdInput.value.trim() || localStorage.getItem('headset_id') || undefined;
+    console.log('[sleepstage] Using headset ID:', headsetId);
     
     // Start streams one by one to ensure proper label reception
     console.log('[sleepstage] Starting streams...');
     await api.stream.start('pow', { headsetId });
+    console.log('[sleepstage] pow stream started');
     await new Promise(resolve => setTimeout(resolve, 500)); // Wait for labels
     
     await api.stream.start('mot', { headsetId });
+    console.log('[sleepstage] mot stream started');
     await new Promise(resolve => setTimeout(resolve, 500)); // Wait for labels
     
     await api.stream.start('dev', { headsetId });
+    console.log('[sleepstage] dev stream started');
     await api.stream.start('eq', { headsetId });
+    console.log('[sleepstage] eq stream started');
     await api.stream.start('fac', { headsetId });
+    console.log('[sleepstage] fac stream started');
     
     startRenewPow();
     startRenewEq();
     sessionStartTime = nowSec();
+    
+    // Reset stage tracking
     stageHistory = [];
     currentStage = null;
+    lastBinaryLabel = 'Wake';
+    binaryStageStartTime = 0;
+    
+    // Reset EMA state
+    emaState.thetaRel = NaN;
+    emaState.alphaRel = NaN;
+    emaState.betaRel = NaN;
+    emaState.ratioTA = NaN;
+    emaState.lastT = 0;
+    
+    // 連続スコア用EMAリセット
+    scoreEma = { initialized: false, value: null, lastTime: null };
+    
+    console.log('[sleepstage] Session reset - all history and state cleared');
     
     // Clear metrics
-    totalSleepTimeEl.textContent = '0m';
-    sleepEfficiencyEl.textContent = '-%';
+    if (totalSleepTimeEl) totalSleepTimeEl.textContent = '0m 0s';
+    if (sleepEfficiencyEl) sleepEfficiencyEl.textContent = '0.0%';
+    if (thetaAlphaRatioEl) thetaAlphaRatioEl.textContent = '-';
+    if (betaRelEl) betaRelEl.textContent = '-';
+    if (motionLevelEl) motionLevelEl.textContent = '-';
+    if (signalQualityEl) signalQualityEl.textContent = '-';
+    if (probabilityInfoEl) {
+      probabilityInfoEl.textContent = '確率: - | 閾値: Sleep≥70%, Wake≤30%';
+      probabilityInfoEl.style.background = '#f8f9fa';
+      probabilityInfoEl.style.color = '#6c757d';
+    }
+    
+    console.log('[sleepstage] All metric displays reset');
     
     // Start periodic status reporting
     const statusInterval = setInterval(() => {
@@ -914,10 +1217,17 @@ startBtn.addEventListener('click', async () => {
 });
 
 stopBtn.addEventListener('click', async () => {
+  console.log('[sleepstage] Stop button clicked!', {
+    stopBtnExists: !!stopBtn,
+    sessionStartTime,
+    hasRenewTimer: !!renewTimer
+  });
+  
   try {
     stopRenewPow();
     stopRenewEq();
     
+    console.log('[sleepstage] Stopping all streams...');
     await Promise.allSettled([
       api.stream.stop('pow'),
       api.stream.stop('mot'),
@@ -929,6 +1239,7 @@ stopBtn.addEventListener('click', async () => {
     sessionStartTime = null;
     console.log('Sleep stage analysis stopped');
   } catch (e) {
+    console.error('Stop error:', e);
     alert('Stop error: ' + (e?.message || String(e)));
   }
 });
@@ -949,3 +1260,46 @@ saveHeadsetBtn.addEventListener('click', () => {
 
 // Start the analysis loop
 requestAnimationFrame(tick);
+
+// --- Final initialization check
+console.log('[sleepstage] Final initialization check:', {
+  DOMContentLoaded: document.readyState,
+  hasStartBtn: !!startBtn,
+  hasStopBtn: !!stopBtn,
+  hasAPI: !!api,
+  hasWSConnect: !!wsConnect,
+  wsConnected,
+  moduleLoaded: true
+});
+
+// Additional check when DOM is fully loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('[sleepstage] DOM Content Loaded - rechecking elements:', {
+      startBtn: !!document.getElementById('start'),
+      stopBtn: !!document.getElementById('stop'),
+      wsStatus: !!document.getElementById('wsstatus')
+    });
+  });
+}
+
+// Debug function for manual testing
+window.debugSleepStage = function() {
+  console.log('[sleepstage] Debug info:', {
+    wsConnected,
+    sessionStartTime,
+    wsStatus: wsStatus?.textContent,
+    powLabels: powLabels.length,
+    motLabels: motLabels.length,
+    bufferSizes: {
+      pow: buffers.pow.length,
+      mot: buffers.mot.length,
+      eq: buffers.eq.length,
+      fac: buffers.fac.length
+    },
+    stageHistory: stageHistory.length,
+    currentStage: currentStage?.label,
+    lastStepAt: new Date(lastStepAt * 1000).toLocaleTimeString()
+  });
+  return { wsConnected, sessionStartTime, buffers, stageHistory };
+};
