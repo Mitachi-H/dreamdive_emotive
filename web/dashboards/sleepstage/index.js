@@ -614,15 +614,29 @@ function tick() {
 }
 
 // --- WebSocket connection
+let wsConnected = false;
+let wsConnectionPromise = null;
+
 const ws = wsConnect({
   onOpen: () => {
     wsStatus.textContent = 'WS: connected';
+    wsConnected = true;
+    if (wsConnectionPromise) {
+      wsConnectionPromise.resolve();
+      wsConnectionPromise = null;
+    }
   },
   onClose: () => {
     wsStatus.textContent = 'WS: disconnected (retrying)';
+    wsConnected = false;
   },
   onError: () => {
     wsStatus.textContent = 'WS: error';
+    wsConnected = false;
+    if (wsConnectionPromise) {
+      wsConnectionPromise.reject(new Error('WebSocket connection failed'));
+      wsConnectionPromise = null;
+    }
   },
   onType: {
     labels: (payload) => {
@@ -747,6 +761,23 @@ const ws = wsConnect({
   }
 });
 
+// --- WebSocket connection utility
+function waitForWebSocketConnection() {
+  if (wsConnected) {
+    return Promise.resolve();
+  }
+  
+  if (!wsConnectionPromise) {
+    wsConnectionPromise = {};
+    wsConnectionPromise.promise = new Promise((resolve, reject) => {
+      wsConnectionPromise.resolve = resolve;
+      wsConnectionPromise.reject = reject;
+    });
+  }
+  
+  return wsConnectionPromise.promise;
+}
+
 // --- Stream management
 function startRenewPow() {
   if (renewTimer) clearInterval(renewTimer);
@@ -767,6 +798,10 @@ function stopRenewPow() {
 // --- Event handlers
 startBtn.addEventListener('click', async () => {
   try {
+    // Wait for WebSocket connection before starting streams
+    wsStatus.textContent = 'WS: waiting for connection...';
+    await waitForWebSocketConnection();
+    
     const headsetId = headsetIdInput.value.trim() || localStorage.getItem('headset_id') || undefined;
     
     await Promise.all([
