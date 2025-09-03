@@ -16,7 +16,41 @@ function createApp(cortex) {
   app.use(helmet({ contentSecurityPolicy: false }));
 
   // Basic rate limit for API endpoints
-  const limiter = rateLimit({ windowMs: 60_000, max: 120 });
+  // Ensure errors are returned as JSON to avoid frontend JSON parse errors
+  const limiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests',
+    handler: (req, res, _next, options) => {
+      try {
+        const status = options && typeof options.statusCode === 'number' ? options.statusCode : 429;
+        const msg = (options && options.message) || 'Too many requests';
+        res.status(status).json({ ok: false, error: String(msg) });
+      } catch (_) {
+        res.status(429).json({ ok: false, error: 'Too many requests' });
+      }
+    },
+  });
+
+  // Higher limit for ingest endpoints (e.g., EOG push) to avoid starving UI
+  const ingestLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 6000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests',
+    handler: (req, res, _next, options) => {
+      try {
+        const status = options && typeof options.statusCode === 'number' ? options.statusCode : 429;
+        const msg = (options && options.message) || 'Too many requests';
+        res.status(status).json({ ok: false, error: String(msg) });
+      } catch (_) {
+        res.status(429).json({ ok: false, error: 'Too many requests' });
+      }
+    },
+  });
 
   // Serve static dashboard
   const webDir = path.join(__dirname, "..", "..", "web");
@@ -241,6 +275,55 @@ function createApp(cortex) {
     // Fallback: remote IP
     return String(req.ip || req.connection?.remoteAddress || '');
   };
+
+  // ----- EOG ingest (Arduino/AD8232 etc.) -----
+  // Accepts JSON payload and broadcasts to WS clients as { type: 'eog', payload }
+  // Body formats accepted:
+  //   { aref?: number, samples: Array<[tSec, v] | { t?: number, epoch_ms?: number, v?: number, raw?: number, lop?: number, lon?: number }> }
+  // Notes:
+  //   - If only raw is provided, v is computed using aref (default 3.3) assuming 10-bit ADC (0..1023)
+  //   - If epoch_ms provided, tSec = epoch_ms / 1000 is used
+  //   - Samples are broadcast in batches to reduce WS overhead
+  app.post('/api/eog/push', apiAuth, ingestLimiter, express.json({ limit: '1mb' }), async (req, res) => {
+    try {
+      const broadcast = req.app?.locals?.broadcast;
+      if (typeof broadcast !== 'function') return res.status(500).json({ ok: false, error: 'broadcast unavailable' });
+
+      const body = req.body || {};
+      const aref = Number(body.aref) || 3.3;
+      const samples = Array.isArray(body.samples) ? body.samples : [];
+      if (!samples.length) return res.status(400).json({ ok: false, error: 'samples required' });
+
+      const out = [];
+      for (const s of samples) {
+        let t = null, v = null, raw = null, lop = null, lon = null;
+        if (Array.isArray(s)) {
+          // [tSec, v] | [tSec, v, raw, lop, lon]
+          t = Number(s[0]);
+          v = (s.length >= 2 && s[1] != null) ? Number(s[1]) : null;
+          raw = (s.length >= 3 && s[2] != null) ? Number(s[2]) : null;
+          lop = (s.length >= 4 && s[3] != null) ? Number(s[3]) : null;
+          lon = (s.length >= 5 && s[4] != null) ? Number(s[4]) : null;
+        } else if (s && typeof s === 'object') {
+          if (s.t != null) t = Number(s.t);
+          if (s.epoch_ms != null) t = Number(s.epoch_ms) / 1000;
+          if (s.v != null) v = Number(s.v);
+          if (s.raw != null) raw = Number(s.raw);
+          if (s.lop != null) lop = Number(s.lop);
+          if (s.lon != null) lon = Number(s.lon);
+        }
+        if (!Number.isFinite(t)) continue; // skip invalid timestamp
+        if (!Number.isFinite(v) && Number.isFinite(raw)) v = (raw / 1023) * aref;
+        out.push({ t, v, raw, lop, lon });
+      }
+
+      if (!out.length) return res.status(400).json({ ok: false, error: 'no valid samples' });
+      broadcast({ type: 'eog', payload: { aref, samples: out } });
+      res.json({ ok: true, count: out.length });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message || String(err) });
+    }
+  });
 
   // Stream control: start/stop pow subscription with ref counting
   app.post("/api/stream/pow/start", apiAuth, limiter, express.json(), async (req, res) => {

@@ -23,3 +23,5 @@ server/.env
 .idea/
 
 .venv/
+
+python/venv/
