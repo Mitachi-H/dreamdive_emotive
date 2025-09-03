@@ -1736,7 +1736,7 @@ function tick() {
         const freshInfo = `fresh: pow=${isFinite(features.powFresh) ? features.powFresh.toFixed(1) + 's' : 'Inf'}(thr:${powThrDisplay.toFixed(1)}s), eq=${isFinite(features.eqFresh) ? features.eqFresh.toFixed(1) + 's' : 'Inf'}(thr:${eqThrDisplay.toFixed(1)}s)`;
         
         // 判定中の場合は、S-Wバー表示を作成
-        if (pSleep > 0.30 && pSleep < 0.70) {
+        if (pSleep >= 0.30 && pSleep <= 0.70) {
           // プログレスバー風の表示を作成
           const barContainer = document.createElement('div');
           barContainer.style.cssText = `
