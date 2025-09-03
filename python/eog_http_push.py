@@ -58,6 +58,7 @@ def main():
     ap.add_argument('--aref', type=float, default=3.3)
     ap.add_argument('--batch', type=int, default=40, help='samples per POST')
     ap.add_argument('--token', type=str, default='', help='API_AUTH_TOKEN if server requires it')
+    ap.add_argument('--verbose', action='store_true', help='print POST results and basic stats')
     args = ap.parse_args()
 
     port = args.port or auto_detect_port()
@@ -70,6 +71,9 @@ def main():
 
     url = args.server.rstrip('/') + '/api/eog/push'
     buf: List[Dict[str, Any]] = []
+    # Align sample timestamps to device millis to keep spacing stable (like Web Serial implementation)
+    ms0 = None  # first seen device millis
+    epoch0 = None  # wall-clock epoch (ms) aligned to ms0
     last_post = time.time()
     try:
         while True:
@@ -79,7 +83,8 @@ def main():
                 if buf and (time.time() - last_post) > 0.25:
                     try:
                         r = post_json(url, { 'aref': args.aref, 'samples': buf }, token=args.token)
-                        # print('POST ok', r)
+                        if args.verbose:
+                            print(f'POST ok: {r}')
                     except Exception as e:
                         print('POST error:', e)
                     buf.clear()
@@ -87,16 +92,29 @@ def main():
                 continue
             try:
                 s = line.decode('utf-8', errors='ignore').strip()
-                ms_str, raw_str, lop_str, lon_str = s.split(',')
-                epoch_ms = int(time.time() * 1000)
-                raw = int(raw_str)
-                lop = int(lop_str)
-                lon = int(lon_str)
+                parts = s.split(',')
+                if len(parts) < 2:
+                    continue
+                ms = int(parts[0])
+                raw = int(parts[1])
+                # tolerate 2–4 columns: ms,raw[,lop[,lon]]
+                lop = int(parts[2]) if len(parts) >= 3 and parts[2] != '' else 0
+                lon = int(parts[3]) if len(parts) >= 4 and parts[3] != '' else 0
+
+                # Initialize alignment anchors on first valid sample
+                now_ms = int(time.time() * 1000)
+                if ms0 is None:
+                    ms0 = ms
+                    epoch0 = now_ms
+                # Align incoming millis to wall clock to produce epoch_ms
+                epoch_ms = epoch0 + (ms - ms0)
+
                 buf.append({ 'epoch_ms': epoch_ms, 'raw': raw, 'lop': lop, 'lon': lon })
                 if len(buf) >= args.batch:
                     try:
                         r = post_json(url, { 'aref': args.aref, 'samples': buf }, token=args.token)
-                        # print('POST ok', r)
+                        if args.verbose:
+                            print(f'POST ok: {r}')
                     except Exception as e:
                         print('POST error:', e)
                     buf.clear()
@@ -112,4 +130,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

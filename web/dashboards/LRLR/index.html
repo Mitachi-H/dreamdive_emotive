@@ -10,7 +10,7 @@
       .card { background:#8881; color:var(--fg); border-radius:8px; padding:10px; }
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       .muted { color: var(--muted); }
-      #eogCanvas { width: 100%; height: 220px; display:block; background:#0001; border-radius:6px; }
+      #eogCanvas { width: 100%; height: var(--eog-height, 360px); display:block; background:#0001; border-radius:6px; }
       #eyeSvg { width: 100%; height: 140px; display:block; }
     </style>
   </head>
@@ -39,14 +39,31 @@
 
       <section class="card" style="margin-top:12px">
         <div class="row" style="justify-content: space-between; align-items: baseline">
-          <div class="small muted">EOG Waveform (last <span id="eogWinSec">12</span>s)</div>
+          <div class="small muted">
+            EOG Waveform (<span id="eogModeLabel">Filtered [V]</span>, last <span id="eogWinSec">12</span>s)
+          </div>
           <div class="small">aref: <span id="aref" class="mono">3.3</span>V, fs≈<span id="fs" class="mono">-</span>Hz</div>
         </div>
+        <!-- Canvas (default) -->
         <canvas id="eogCanvas"></canvas>
+        <!-- Matplotlib WebAgg iframe (optional, hidden by default) -->
+        <iframe id="mplFrame" src="" style="width:100%; height: var(--eog-height, 360px); border:none; display:none; border-radius:6px; background:#0001"></iframe>
         <div class="row small muted" style="margin-top:6px">
           <div>t: <span id="tNow" class="mono">-</span></div>
           <div>Lead-off: <span id="leadOff" class="mono">?</span></div>
           <div>Samples: <span id="nSamples" class="mono">0</span></div>
+        </div>
+        <div class="row small" style="margin-top:8px; align-items:center">
+          <label style="display:flex; align-items:center; gap:6px">
+            <input type="checkbox" id="mplToggle" />
+            <span>Use Matplotlib WebAgg</span>
+          </label>
+          <input id="mplUrl" class="mono" placeholder="http://127.0.0.1:8988/" style="min-width: 280px" />
+          <button id="mplLoad">Load</button>
+          <span id="mplStatus" class="muted">Off</span>
+          <span class="muted" style="margin-left:auto">Height:</span>
+          <input type="number" id="eogHeightPx" class="mono" min="160" max="800" step="20" value="360" style="width:84px" />
+          <span class="muted">px</span>
         </div>
         <div class="row" style="margin-top:8px; align-items: center">
           <button id="serialConnect">Connect EOG (Web Serial)</button>

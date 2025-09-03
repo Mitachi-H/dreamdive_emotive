@@ -43,3 +43,25 @@ python3 eog_http_push.py --server http://localhost:3000 \
 - 時間軸は UNIX 時刻（秒）で揃えます。EOG 側は `epoch_ms` を送るためダッシュボード内で FAC の `payload.time` と整合が取れます。
 - EOG 波形の表示窓は 12 秒（`index.js` の `EOG_WINDOW_SEC`）です。必要に応じて変更してください。
 
+## Matplotlib と完全一致の可視化（WebAgg 埋め込み）
+
+Filtered [V] を Python の Matplotlib（`plt`）と見た目・挙動まで一致させたい場合、Matplotlib の WebAgg バックエンドを使い、ダッシュボードに iframe として埋め込めます。
+
+1) Python 側（例: `eog_realtime_stream.py`）の先頭でバックエンドを WebAgg に設定
+
+```python
+import matplotlib as mpl
+mpl.use('webagg')
+mpl.rcParams['webagg.address'] = '127.0.0.1'
+mpl.rcParams['webagg.port'] = 8988
+mpl.rcParams['webagg.open_in_browser'] = False
+import matplotlib.pyplot as plt
+# 以降は通常通り FuncAnimation + plt.show()
+```
+
+2) ダッシュボード側
+
+- LRLR ページの「Use Matplotlib WebAgg」を ON にし、URL を `http://127.0.0.1:8988/` に設定して「Load」。
+- ON の間はキャンバス描画を止め、Matplotlib の描画（WebAgg）が iframe として表示されます。
+
+メモ：WebAgg は開発用の軽量サーバです。公開運用する場合は同一オリジン化（リバースプロキシ）や認証付与をご検討ください。
