@@ -73,7 +73,7 @@ let thresholds = {
   
   // Sleep classification thresholds
   sleepThreshold: 0.70,
-  wakeThreshold: 0.30,
+  wakeThreshold: 0.60,
   
   // Time constraints
   minStageSec: 30,
