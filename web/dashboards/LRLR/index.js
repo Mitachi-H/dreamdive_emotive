@@ -34,15 +34,15 @@ const eogHeightInput = $('eogHeightPx');
 // ---------------- Eye Actions (look L/R unified) ----------------
 const EYE_WINDOW_SEC = 60;
 eyeWinSecEl.textContent = String(EYE_WINDOW_SEC);
-const EYE_ROWS = ['neutral', 'blink', 'wink', 'look'];
+const EYE_ROWS = ['neutral', 'look'];
 const EYE_COLORS = { neutral: '#9ca3af', blink: '#fbbf24', wink: '#34d399', look: '#3b82f6' };
-let eyeBins = []; // [{ sec, active: { neutral, blink, wink, look } }]
+let eyeBins = []; // [{ sec, active: { neutral, look } }]
 
 function initEyeBins(nowSec) {
   const base = Math.floor(nowSec);
   eyeBins = Array.from({ length: EYE_WINDOW_SEC }, (_, i) => ({
     sec: base - (EYE_WINDOW_SEC - 1 - i),
-    active: { neutral: 0, blink: 0, wink: 0, look: 0 },
+    active: { neutral: 0, look: 0 },
   }));
 }
 function advanceEyeBins(nowSec) {
@@ -51,7 +51,7 @@ function advanceEyeBins(nowSec) {
   let last = eyeBins[eyeBins.length - 1].sec;
   if (now <= last) return;
   for (let s = last + 1; s <= now; s++) {
-    eyeBins.push({ sec: s, active: { neutral: 0, blink: 0, wink: 0, look: 0 } });
+    eyeBins.push({ sec: s, active: { neutral: 0, look: 0 } });
     if (eyeBins.length > EYE_WINDOW_SEC) eyeBins.shift();
   }
 }
